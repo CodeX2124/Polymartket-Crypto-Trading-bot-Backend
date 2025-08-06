@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
-import { ENV } from './env';
 
-const uri = ENV.MONGO_URI || 'mongodb://localhost:27017/polymarket_copytrading';
+const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/polymarket_copytrading';
 
 const connectDB = async () => {
     try {
