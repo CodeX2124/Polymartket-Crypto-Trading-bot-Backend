@@ -37,7 +37,7 @@ interface TradeFilterData {
 }
 
 const USER_ADDRESS = process.env.USER_ADDRESS;
-const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '10', 10);
+const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '30', 10);
 
 if (!USER_ADDRESS) {
   throw new Error('USER_ADDRESS is not defined');
@@ -155,7 +155,7 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
     // Filter new trades
     let newTrades = userActivities.filter(activity => 
       !tempTrades.some(existing => existing.transactionHash === activity.transactionHash) && activity.side.toLowerCase() === tradeStyle
-    );
+    );    
 
     if(newTrades.length > 0){
       // Apply filters
@@ -208,8 +208,9 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
           }
         })));
         tempTrades = [...new Set(tempTrades.concat(processedTrades))];
+        newTrades = [...new Set(newTrades)];
 
-        await tradeExcutor(filterData, tradeStyle);
+        await tradeExcutor(filterData, newTrades, tradeStyle);
       }
     }
   } catch (error) {

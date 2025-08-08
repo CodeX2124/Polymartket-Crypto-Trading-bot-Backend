@@ -13,7 +13,6 @@ const RETRY_LIMIT = process.env.RETRY_LIMIT || 3;
 const PROXY_WALLET = process.env.PROXY_WALLET || '0x4cfD99a5636418c9c7589bD9f28860d9829BB4A3';
 
 let temp_trades: UserActivityInterface[] = [];
-
 const UserActivity = getUserActivityModel(USER_ADDRESS);
 
 const readTempTrade = async () => {
@@ -22,11 +21,12 @@ const readTempTrade = async () => {
             $and: [{ type: 'TRADE' }, { bot: false }, { botExecutedTime: { $lt: RETRY_LIMIT } }],
         }).exec()
     ).map((trade) => trade as UserActivityInterface);
+
 };
 
-const doTrading = async (clobClient: ClobClient, filterData: any, tradeStyle: string) => {
-    console.log(temp_trades.length)
-    for (let trade of temp_trades) {
+const doTrading = async (clobClient: ClobClient, filterData: any, newTrades: any, tradeStyle: string) => {
+    console.log(newTrades.length)
+    for (let trade of newTrades) {
         console.log('Trade to copy:', trade);
         // const market = await clobClient.getMarket(trade.conditionId);
         // const my_positions: UserPositionInterface[] = await fetchData(
@@ -48,63 +48,94 @@ const doTrading = async (clobClient: ClobClient, filterData: any, tradeStyle: st
         
         const orderBook = await clobClient.getOrderBook(trade.asset);
         console.log("orderBook===>", orderBook);
-        // if (filterData[tradeStyle].copyOrderSize.size && filterData[tradeStyle].copyOrderSize.type){
-        //     if(filterData[tradeStyle].copyOrderSize.type === 'amount') {
-        //         const orderSize = parseFloat(filterData[tradeStyle].copyOrderSize.size);
-        //         if (trade.side === 'BUY') {
-        //             const marketOrder = await clobClient.createMarketOrder({
-        //                 side: Side.BUY,
-        //                 tokenID: trade.asset,
-        //                 amount: orderSize,
-        //                 feeRateBps: 0,
-        //                 nonce: 0,
-        //                 price: orderBook.bid
-        //             });
-        //             const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
-        //             console.log("resp: ", resp);
-        //         } else {
-        //             const marketOrder = await clobClient.createMarketOrder({
-        //                 side: Side.SELL,
-        //                 tokenID: trade.asset,
-        //                 amount: orderSize,
-        //                 feeRateBps: 0,
-        //                 nonce: 0,
-        //                 price: trade.price
-        //             });
-        //             const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
-        //             console.log("resp: ", resp);
-        //         }
 
-        //     } 
+        const asks_length = orderBook.asks.length;
+        const bids_length = orderBook.bids.length
 
-        //     if(filterData[tradeStyle].copyOrderSize.type === 'percentage') {
-        //         const orderSize = parseFloat(filterData[tradeStyle].copyOrderSize.size);
-        //         if (trade.side === 'BUY') {
-        //             const marketOrder = await clobClient.createMarketOrder({
-        //                 side: Side.BUY,
-        //                 tokenID: trade.asset,
-        //                 amount: (orderSize * trade.size / 100),
-        //                 feeRateBps: 0,
-        //                 nonce: 0,
-        //                 price: trade.price
-        //             });
-        //             const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
-        //             console.log(resp);
-        //         } else {
-        //             const marketOrder = await clobClient.createMarketOrder({
-        //                 side: Side.SELL,
-        //                 tokenID: trade.asset,
-        //                 amount: (orderSize * trade.size / 100),
-        //                 feeRateBps: 0,
-        //                 nonce: 0,
-        //                 price: trade.price
-        //             });
-        //             const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
-        //             console.log(resp);
-        //         }
+        if (filterData[tradeStyle].copyOrderSize.size && filterData[tradeStyle].copyOrderSize.type){
+            if(filterData[tradeStyle].copyOrderSize.type === 'amount') {
+                const orderSize = parseFloat(filterData[tradeStyle].copyOrderSize.size);
+                if (trade.side === 'BUY') {
+                    if(orderBook){
 
-        //     }
-        // }
+                        console.log("Before market creat");
+                        const marketOrder = await clobClient.createMarketOrder({
+                            side: Side.BUY,
+                            tokenID: trade.asset,
+                            amount: orderSize,
+                            feeRateBps: 0,
+                            nonce: 0,
+                            price: parseFloat(orderBook.asks[asks_length].price)
+                        });
+
+                        console.log("marketOrder created");
+                        const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
+                        console.log("buy amount resp: ", resp);
+                    } else {
+                        continue
+                    }
+                } else {
+                    if(orderBook){
+
+                        console.log("Before market creat");
+                        const marketOrder = await clobClient.createMarketOrder({
+                            side: Side.SELL,
+                            tokenID: trade.asset,
+                            amount: orderSize,
+                            feeRateBps: 0,
+                            nonce: 0,
+                            price: parseFloat(orderBook.bids[bids_length].price)
+                        });
+
+                        console.log("marketOrder created");
+                        const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
+                        console.log("sell amount resp: ", resp);
+                    } else {
+                        continue
+                    }
+                }
+
+            } 
+
+            if(filterData[tradeStyle].copyOrderSize.type === 'percentage') {
+                const orderSize = parseFloat(filterData[tradeStyle].copyOrderSize.size);
+                if (trade.side === 'BUY') {
+                    if(orderBook){
+                        const marketOrder = await clobClient.createMarketOrder({
+                            side: Side.BUY,
+                            tokenID: trade.asset,
+                            amount: (orderSize * trade.size / 100),
+                            feeRateBps: 0,
+                            nonce: 0,
+                            price: parseFloat(orderBook.asks[asks_length].price)
+                        });
+
+                        console.log("marketOrder created");
+                        const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
+                        console.log("bid percentage resp: ", resp);
+                    } else {
+                        continue
+                    }               
+                } else {
+                    if(orderBook){
+                        const marketOrder = await clobClient.createMarketOrder({
+                            side: Side.SELL,
+                            tokenID: trade.asset,
+                            amount: (orderSize * trade.size / 100),
+                            feeRateBps: 0,
+                            nonce: 0,
+                            price: parseFloat(orderBook.bids[bids_length].price)
+                        });
+
+                        console.log("marketOrder created");
+                        const resp = await clobClient.postOrder(marketOrder, OrderType.FAK);
+                        console.log("sell percentage resp: ", resp);
+                    } else {
+                        continue
+                    }
+                }
+            }
+        }
 
         // if (settings.limitOrderSize.size && settings.limitOrderSize.type){
         //     const orderSize = parseFloat(settings.limitOrderSize.size);
@@ -143,21 +174,19 @@ const doTrading = async (clobClient: ClobClient, filterData: any, tradeStyle: st
             
         // }
     }
-
-    temp_trades = [];
 };
 
-const tradeExcutor = async (filterData: any, tradeStyle: string) => {
+const tradeExcutor = async (filterData: any, newTrades: any, tradeStyle: string) => {
     
     const clobClient = await createClobClient();
     console.log(`Executing Copy Trading`);
 
     try{
-        await readTempTrade();
-        if (temp_trades.length > 0) {
+        // await readTempTrade();
+        if (newTrades.length > 0) {
             console.log('💥 New transactions found 💥');
             spinner.stop();
-            await doTrading(clobClient, filterData, tradeStyle);
+            await doTrading(clobClient, filterData, newTrades, tradeStyle);
         } else {
             spinner.start('Waiting for new transactions');
         }
