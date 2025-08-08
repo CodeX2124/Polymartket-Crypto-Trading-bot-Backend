@@ -61,7 +61,7 @@ const activitySchema = new Schema({
     profileImage: { type: String, required: false },
     profileImageOptimized: { type: String, required: false },
     bot: { type: Boolean, required: false },
-    botExcutedTime: { type: Number, required: false },
+    botExecutedTime: { type: Number, required: false },
 });
 
 const getUserPositionModel = (walletAddress: string) => {

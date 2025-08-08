@@ -3,6 +3,7 @@ import { UserActivityInterface, UserPositionInterface } from '../Interface/User'
 import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import fetchData from './fetchdata-controlller';
 import { Request, Response } from 'express';
+import tradeExcutor from './tradeExecutor-controller';
 
 type intervalPtrType = {
   [key: string]: NodeJS.Timeout
@@ -36,7 +37,7 @@ interface TradeFilterData {
 }
 
 const USER_ADDRESS = process.env.USER_ADDRESS;
-const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '1', 10);
+const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '10', 10);
 
 if (!USER_ADDRESS) {
   throw new Error('USER_ADDRESS is not defined');
@@ -76,7 +77,7 @@ const fetchTradeData = async (filterData: TradeFilterData): Promise<void> => {
   }
 };
 
-const filterByDaysTillEvent = async (activities: UserActivityInterface[], tradeStyle: 'buy' | 'sell'): Promise<UserActivityInterface[]> => {
+const filterByDaysTillEvent = async (activities: UserActivityInterface[]): Promise<UserActivityInterface[]> => {
   const filteredResults = await Promise.all(
     activities.map(async (activity) => {
       try {
@@ -99,7 +100,7 @@ const filterByDaysTillEvent = async (activities: UserActivityInterface[], tradeS
   return activities.filter((_, index) => filteredResults[index]);
 };
 
-const filterByCategory = async (activities: UserActivityInterface[], tradeStyle: 'buy' | 'sell'): Promise<UserActivityInterface[]> => {
+const filterByCategory = async (activities: UserActivityInterface[]): Promise<UserActivityInterface[]> => {
   const sportsKeywords = [
     'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball', 'baseball', 'hockey', 'tennis', 'golf', 'mma', 'ufc', 'ucl', 'epl', 'boxing', 'cricket', 'rugby',
     'olympics', 'formula1', 'f1', 'nascar', 'esports', 'cycling', 'wrestling', 'skateboarding', 'snowboarding', 'surfing', 'badminton', 'table-tennis',
@@ -113,35 +114,31 @@ const filterByCategory = async (activities: UserActivityInterface[], tradeStyle:
 
   const filteredResults = await Promise.all(
     activities.map(async (activity) => {
-      try {
-        console.log(activity.side.toLowerCase(), "===", tradeStyle);
-        if (activity.side.toLowerCase() === tradeStyle){
-            const markets = await fetchData(
-              `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
-            );
-    
-            if (!markets?.length) return false;
-    
-            const market = markets[0];
-            
-            // Check tags
-            if (market.events?.tags?.some((tag: any) => 
-              sportsKeywords.includes(tag.slug?.toLowerCase()))) {
-              return true;
-            }
-    
-            // Check series
-            if (market.events?.series?.some((s: any) => 
-              sportsKeywords.includes(s.slug?.toLowerCase()))) {
-              return true;
-            }
-    
-            // Check title/description
-            const text = `${market.title || ''} ${market.description || ''}`.toLowerCase();
-            return sportsKeywords.some(keyword => text.includes(keyword));
-            // return false;
-        }
-        
+      try {     
+          const markets = await fetchData(
+            `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
+          );
+  
+          if (!markets?.length) return false;
+  
+          const market = markets[0];
+          
+          // Check tags
+          if (market.events?.tags?.some((tag: any) => 
+            sportsKeywords.includes(tag.slug?.toLowerCase()))) {
+            return true;
+          }
+  
+          // Check series
+          if (market.events?.series?.some((s: any) => 
+            sportsKeywords.includes(s.slug?.toLowerCase()))) {
+            return true;
+          }
+  
+          // Check title/description
+          const text = `${market.title || ''} ${market.description || ''}`.toLowerCase();
+          return sportsKeywords.some(keyword => text.includes(keyword));
+          // return false;   
       } catch {
         return false;
       }
@@ -179,11 +176,11 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
       }   
       
       if (settings.byTillDayEvent) {
-        newTrades = await filterByDaysTillEvent(newTrades, tradeStyle);
+        newTrades = await filterByDaysTillEvent(newTrades);
       }
   
       if (settings.byCategory) {
-          newTrades = await filterByCategory(newTrades, tradeStyle);
+          newTrades = await filterByCategory(newTrades);
       }
       
       if (settings.byAmount) {
@@ -203,10 +200,16 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
         .sort((a, b) => a.timestamp - b.timestamp);
   
       if (processedTrades.length > 0) {
-        await UserActivity.insertMany(processedTrades);
-        tempTrades = [...tempTrades, ...processedTrades];
-        newTrades = [];
-        console.log(tempTrades);
+        await UserActivity.bulkWrite(processedTrades.map(pt => ({
+          updateOne: {
+            filter: { transactionHash: pt.transactionHash },
+            update: pt,
+            upsert: true
+          }
+        })));
+        tempTrades = [...new Set(tempTrades.concat(processedTrades))];
+
+        await tradeExcutor(filterData, tradeStyle);
       }
     }
   } catch (error) {
@@ -219,11 +222,11 @@ const tradeMonitor = async (filterData: TradeFilterData): Promise<void> => {
   
   try {
     await init();
-    console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
     
-      try {
-        clearInterval(intervalPtr[USER_ADDRESS]);
-        intervalPtr[USER_ADDRESS] = setInterval(() => {
+    try {
+      clearInterval(intervalPtr[USER_ADDRESS]);
+      intervalPtr[USER_ADDRESS] = setInterval(() => {
+          console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
           fetchTradeData(filterData)
         }, FETCH_INTERVAL * 1000)
       } catch (error) {
