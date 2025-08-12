@@ -2,7 +2,7 @@ import moment from 'moment';
 import { UserActivityInterface, UserPositionInterface } from '../Interface/User';
 import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import fetchData from './fetchdata-controlller';
-import { Request, Response } from 'express';
+
 import tradeExcutor from './tradeExecutor-controller';
 
 type intervalPtrType = {
@@ -105,7 +105,7 @@ const filterByCategory = async (activities: UserActivityInterface[]): Promise<Us
     'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball', 'baseball', 'hockey', 'tennis', 'golf', 'mma', 'ufc', 'ucl', 'epl', 'boxing', 'cricket', 'rugby',
     'olympics', 'formula1', 'f1', 'nascar', 'esports', 'cycling', 'wrestling', 'skateboarding', 'snowboarding', 'surfing', 'badminton', 'table-tennis',
     'handball', 'volleyball', 'lacrosse', 'auto-racing', 'horse-racing', 'darts', 'snooker', 'bowling', 'water-polo', 'swimming', 'track-and-field',
-    'athletics', 'triathlon', 'sailing', 'sports', 'chess', 'uefa',    
+    'athletics', 'triathlon', 'sailing', 'sports', 'chess', 'uefa', 'league',
     // Additional specific slugs
     'aaron-rodgers', 'ufc-fight-night', 'nba-finals', 'nba-champion', 'nba-draft', 'college-football', 'heisman', 'cfb', 'ncaa-football', 'nfl-draft', 'premier-league',
     'fifa-world-cup', 'world-cup', 'wnba', 'pll', 'premier-lacrosse-league', 'leagues-cup',
@@ -157,6 +157,7 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
       !tempTrades.some(existing => existing.transactionHash === activity.transactionHash) && activity.side.toLowerCase() === tradeStyle
     );    
 
+    console.log("length:", newTrades.length);
     if(newTrades.length > 0){
       // Apply filters
       if (settings.byOrder) {
@@ -207,10 +208,10 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
             upsert: true
           }
         })));
-        tempTrades = [...new Set(tempTrades.concat(processedTrades))];
-        newTrades = [...new Set(newTrades)];
-
+        newTrades = [...new Set(processedTrades)];
+        // await UserActivity.insertMany(newTrades);
         await tradeExcutor(filterData, newTrades, tradeStyle);
+        newTrades = [];
       }
     }
   } catch (error) {
@@ -222,13 +223,13 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
 const tradeMonitor = async (filterData: TradeFilterData): Promise<void> => {
   
   try {
-    await init();
     
     try {
       clearInterval(intervalPtr[USER_ADDRESS]);
       intervalPtr[USER_ADDRESS] = setInterval(() => {
+          init();
           console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
-          fetchTradeData(filterData)
+          fetchTradeData(filterData);
         }, FETCH_INTERVAL * 1000)
       } catch (error) {
         console.error('Error in monitoring loop:', error);

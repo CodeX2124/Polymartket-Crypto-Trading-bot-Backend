@@ -1,4 +1,4 @@
-import connectDB from '../config/db';
+// import connectDB from '../config/db';
 import {tradeMonitor} from './tradeMonitor-controller';
 import { Request, Response } from 'express';
 import { stopMonitor } from './tradeMonitor-controller';
@@ -11,7 +11,7 @@ const PROXY_WALLET = process.env.PROXY_WALLET;
 const startMonitoring = async (req: Request, res: Response) => {
     try {
 
-        await connectDB();
+        // await connectDB();
         //Get data from frontend
         monitoringSettings = req.body;
         console.log(`Target User Wallet addresss is: ${USER_ADDRESS}`);
