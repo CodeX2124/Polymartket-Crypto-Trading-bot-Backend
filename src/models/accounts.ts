@@ -11,7 +11,7 @@ const accountSchema = new Schema<IAccount>({
   id: { type: String, required: true, unique: true },
   proxyWallet: { type: String, required: true },
   privateKey: { type: String, required: true },
-  isActive: { type: Boolean, default: false }
+  isActive: { type: Boolean, default: false },
 });
 
 export const Account = model<IAccount>('Account', accountSchema);
