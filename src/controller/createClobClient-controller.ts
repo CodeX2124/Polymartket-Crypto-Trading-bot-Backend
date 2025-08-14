@@ -1,12 +1,19 @@
 import { ethers } from 'ethers';
 import { ClobClient } from '@polymarket/clob-client';
 import { SignatureType } from '@polymarket/order-utils';
+import { Account } from '../models/accounts';
 
-const PROXY_WALLET = process.env.PROXY_WALLET;
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
-const CLOB_HTTP_URL = process.env.CLOB_HTTP_URL;
+let PRIVATE_KEY = "";
 
-const createClobClient = async (): Promise<ClobClient> => {
+const createClobClient = async (proxyAddress: any): Promise<ClobClient> => {
+
+    const PROXY_WALLET = proxyAddress;
+    const accounts = await Account.find();
+    const account = accounts.find((account) => account.proxyWallet.toLowerCase() == PROXY_WALLET.toLowerCase()) 
+    if (account) {
+        PRIVATE_KEY = account.privateKey;
+    }
+    const CLOB_HTTP_URL = process.env.CLOB_HTTP_URL;
     const chainId = 137;
     const host = CLOB_HTTP_URL as string;
     const wallet = new ethers.Wallet(PRIVATE_KEY as string);

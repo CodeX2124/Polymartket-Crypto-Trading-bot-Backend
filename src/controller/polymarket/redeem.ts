@@ -4,21 +4,15 @@ import { encodeRedeem, encodeRedeemNegRisk } from "./encode";
 import { signAndExecuteSafeTransaction } from "./safe-helper";
 import { SafeTransaction, OperationType, FeeTier } from "../../Interface/Polymarket";
 import { ethers } from "ethers";
+import { Account } from '../../models/accounts';
 
-
-const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
-const pk = new ethers.Wallet(process.env.NEXT_PUBLIC_PRIVATE_KEY || "0x7ba2ced5a1b451751a47a2209190473d9c08fe943940ce24286b222c3de2e8cc");
-const wallet = pk.connect(provider);
-const NEG_RISK_ADAPTER_ADDRESS = process.env.NEXT_PUBLIC_NEG_RISK_ADAPTER_ADDRESS || "";
-const USDC_ADDRESS = process.env.NEXT_PUBLIC_USDC_CONTRACT_ADDRESS || "";
-const safeAddress = process.env.NEXT_PUBLIC_PROXY_WALLET || "";
-const safe = new ethers.Contract(safeAddress, safeAbi, wallet);
-const CONDITIONAL_TOKENS_FRAMEWORK_ADDRESS = process.env.NEXT_PUBLIC_CONDITIONAL_TOKENS_FRAMEWORK_ADDRESS || "";
+const NEG_RISK_ADAPTER_ADDRESS = process.env.NEG_RISK_ADAPTER_ADDRESS || "";
+const USDC_ADDRESS = process.env.USDC_CONTRACT_ADDRESS || "";
+const CONDITIONAL_TOKENS_FRAMEWORK_ADDRESS = process.env.CONDITIONAL_TOKENS_FRAMEWORK_ADDRESS || "";
+let PRIVATE_KEY = "";
 
 export async function createRedeemTxn(redeemAssetPair: any, amount: string[]) {
     console.log(`Starting...`);
-
-    console.log("safe address:", safeAddress);
 
     const conditionId = redeemAssetPair.conditionId; // Replace with the market conditionId
     const negRisk = redeemAssetPair.negativeRisk;
@@ -39,15 +33,29 @@ export async function createRedeemTxn(redeemAssetPair: any, amount: string[]) {
 }
 
 export async function redeemPositions(redeemAsset: any) {
+
     try {
+
         const maxGasInfo = await getGasPrice(FeeTier.High);
-        const redeemAmount = [redeemAsset.size?.toString() ?? "0"];
-        const txn = await createRedeemTxn(redeemAsset, redeemAmount);
+        const redeemAmount = [redeemAsset.body.size?.toString() ?? "0"];
+        const txn = await createRedeemTxn(redeemAsset.body, redeemAmount);
+        const safeAddress = redeemAsset.body.proxyWallet || "";
+        const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+        const accounts = await Account.find();
+        const account = accounts.find((account) => account.proxyWallet.toLowerCase() == safeAddress.toLowerCase()) 
+        if (account) {
+            PRIVATE_KEY = account.privateKey;
+        }
+        const pk = new ethers.Wallet(PRIVATE_KEY || "");
+        const wallet = pk.connect(provider);
+        const safe = new ethers.Contract(safeAddress, safeAbi, wallet);
         const txnHash = await signAndExecuteSafeTransaction(wallet, safe, txn, {
             maxFeePerGas: maxGasInfo.maxFee,
             maxPriorityFeePerGas: maxGasInfo.maxPriorityFee
         });
-        return txnHash;
+        return {
+            success: true,
+            messssage: txnHash};
     } catch (error) {
         throw error;
     }

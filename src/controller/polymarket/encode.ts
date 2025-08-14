@@ -7,6 +7,7 @@ const CTF_INTERFACE = new Interface(ctfAbi);
 const NEG_RISK_INTERFACE = new Interface(negRiskAdapterAbi);
 
 export const encodeRedeem = (collateralToken: string, conditionId: string) : string => {
+    console.log("condition_id", conditionId )
     return CTF_INTERFACE.encodeFunctionData(
         "redeemPositions(address,bytes32,bytes32,uint256[])",
         [collateralToken, ethers.constants.HashZero, conditionId, [1, 2]],

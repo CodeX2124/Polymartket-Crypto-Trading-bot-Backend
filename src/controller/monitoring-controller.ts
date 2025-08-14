@@ -5,17 +5,12 @@ import { stopMonitor } from './tradeMonitor-controller';
 
 let monitoringSettings: any = null;
 
-const USER_ADDRESS = process.env.USER_ADDRESS;
-const PROXY_WALLET = process.env.PROXY_WALLET;
-
 const startMonitoring = async (req: Request, res: Response) => {
     try {
 
         // await connectDB();
         //Get data from frontend
         monitoringSettings = req.body;
-        console.log(`Target User Wallet addresss is: ${USER_ADDRESS}`);
-        console.log(`My Wallet addresss is: ${PROXY_WALLET}`);
         console.log('Received monitoring settings:', monitoringSettings);
 
         // const clobClient = await createClobClient();
@@ -26,8 +21,7 @@ const startMonitoring = async (req: Request, res: Response) => {
             success: true,
             message: 'Monitoring started with settings',
             data: {
-                userAddress: process.env.USER_ADDRESS,
-                proxyWallet: process.env.PROXY_WALLET,
+                userAddress: monitoringSettings.proxyAddress,
                 settings: monitoringSettings
             }
         });
@@ -45,7 +39,9 @@ const startMonitoring = async (req: Request, res: Response) => {
 const stopMonitoring = async (req: Request, res: Response) => {
     try {
 
-        await stopMonitor();
+        const address = req.body;
+
+        await stopMonitor(address);
 
         res.status(200).json({
             success: true,

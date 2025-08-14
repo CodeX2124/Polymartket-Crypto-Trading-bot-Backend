@@ -39,7 +39,8 @@ router.post('/', async (req, res) => {
 // Get all accounts
 router.get('/', async (req, res) => {
   try {
-    const accounts = await Account.find();    
+    const accounts = await Account.find(); 
+    console.log(accounts)   
     res.json(accounts);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
