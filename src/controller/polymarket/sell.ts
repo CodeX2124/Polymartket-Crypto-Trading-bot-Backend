@@ -7,7 +7,7 @@ import { Request, Response } from 'express';
 
 export async function sellPositions(req: Request, res: Response) {
     try {
-        const { position, amount } = req.body;
+        const { position, amount, USER_ADDRESS } = req.body;
 
         if (!position || amount === undefined) {
             return res.status(400).json({ error: 'Missing position or amount in request body' });
@@ -28,7 +28,7 @@ export async function sellPositions(req: Request, res: Response) {
             return res.status(404).json({ error: `No activity found for conditionId: ${position.conditionId}` });
         }
 
-        await postOrder(clobClient, "SELL", position, user_activity, amount, '', 0);
+        await postOrder(clobClient, "SELL", position, user_activity, amount, '', 0, USER_ADDRESS);
         return res.status(200).json({ success: true });
     } catch (error) {
         console.error("Error in sellPositions:", error);

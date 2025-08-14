@@ -8,20 +8,21 @@ const router = Router();
 // Create account
 router.post('/', async (req, res) => {
   try {
-    const { id, proxyWallet, privateKey } = req.body;
+    const { id, proxyWallet, privateKey, targetWallet } = req.body;
     
     const newAccount = new Account({
       id,
       proxyWallet,
+      targetWallet,
       privateKey,
       isActive: false,
     });
 
-    if(verifyAddress(proxyWallet) && validatePrivateKey(privateKey)){
+    if(verifyAddress(proxyWallet) && verifyAddress(targetWallet) && validatePrivateKey(privateKey)){
       const savedAccount = await newAccount.save();
       res.status(201).json(savedAccount);
     } else {
-      if(!verifyAddress(proxyWallet)){
+      if(!verifyAddress(proxyWallet) || !verifyAddress(targetWallet)){
         res.status(400).json({ error: 'Incorrect wallet address' });
       }
       if(!validatePrivateKey(privateKey)){
@@ -108,7 +109,6 @@ router.put('/:id/update', async (req, res) => {
       { isActive: isActive },
       { new: true }
     ); 
-    console.log(updatedAccount)
     
     if (!updatedAccount) {
       return res.status(404).json({ error: 'Account not found' });

@@ -7,10 +7,9 @@ const router = Router();
 router.post('/', async (req, res) => {
     try {
         const settings = req.body;
-        console.log(settings);
 
         if (!settings.proxyAddress) {
-        return res.status(400).json({ error: 'proxyAddress is required' });
+            return res.status(400).json({ error: 'proxyAddress is required' });
         }
 
         const savedSettings = await Settings.findOneAndUpdate(

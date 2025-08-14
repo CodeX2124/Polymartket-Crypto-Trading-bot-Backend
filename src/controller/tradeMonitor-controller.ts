@@ -2,8 +2,9 @@ import moment from 'moment';
 import { UserActivityInterface, UserPositionInterface } from '../Interface/User';
 import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import fetchData from './fetchdata-controlller';
-
+import { Settings } from '../models/settings';
 import tradeExcutor from './tradeExecutor-controller';
+import { Account } from '../models/accounts';
 
 type intervalPtrType = {
   [key: string]: NodeJS.Timeout
@@ -36,38 +37,49 @@ interface TradeFilterData {
   sell: FilterSettings;
 }
 
-const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '30', 10);
-const USER_ADDRESS = process.env.USER_ADDRESS || "";
+const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '1', 10);
 
 let slaves: any = [];
 
-
-const UserActivity = getUserActivityModel(USER_ADDRESS);
-const UserPosition = getUserPositionModel(USER_ADDRESS);
-
-let tempTrades: UserActivityInterface[] = []; 
-
-const init = async (): Promise<void> => {
+const init = async (settings: any): Promise<{
+  address: string;
+  activity: any; 
+  temp: UserActivityInterface[];
+}> => {
   try {
-    tempTrades = (await UserActivity.find().exec()).map((trade) => trade as UserActivityInterface);
+    let USER_ADDRESS = "";
+    let account = await Account.findOne({proxyWallet: settings.proxyAddress});
+    if(account){
+      USER_ADDRESS = account.targetWallet;
+    }
+    let UserActivity = getUserActivityModel(USER_ADDRESS);
+    let tempTrades: UserActivityInterface[] = (await UserActivity.find().exec()).map((trade) => trade as UserActivityInterface);
+    
+    return {
+      address: USER_ADDRESS,
+      activity: UserActivity,
+      temp: tempTrades
+    };
+        
   } catch (error) {
     console.error('Error initializing trades:', error);
     throw error;
   }
 };
 
-const fetchTradeData = async (filterData: any): Promise<void> => {
+const fetchTradeData = async (filterData: any, USER_ADDRESS: string, activity: any, tempTrades: UserActivityInterface[]): Promise<void> => {
   try {
+    
     let userActivities: UserActivityInterface[] = await fetchData(
       `https://data-api.polymarket.com/activity?user=${USER_ADDRESS}&limit=500&offset=0`
     );
     
     if (filterData.buy.Filter.byOrderSize || filterData.buy.Filter.bySports || filterData.buy.Filter.byMinMaxAmount || filterData.buy.Filter.byDaysTillEvent || filterData.buy.Filter.byPrice ) {
-      await filterAndSaveTrades(userActivities, filterData, 'buy');
+      await filterAndSaveTrades(userActivities, filterData, 'buy', activity, tempTrades, USER_ADDRESS);
     }
 
     if (filterData.sell.Filter.byOrderSize || filterData.sell.Filter.bySports || filterData.sell.Filter.byMinMaxAmount || filterData.sell.Filter.byDaysTillEvent || filterData.sell.Filter.byPrice ) {
-      await filterAndSaveTrades(userActivities, filterData, 'sell');
+      await filterAndSaveTrades(userActivities, filterData, 'sell', activity, tempTrades, USER_ADDRESS);
     }
     
   } catch (error) {
@@ -147,7 +159,14 @@ const filterByCategory = async (activities: UserActivityInterface[]): Promise<Us
   return activities.filter((_, index) => filteredResults[index]);
 };
 
-const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filterData: any, tradeStyle: 'buy' | 'sell'): Promise<void> => {
+const filterAndSaveTrades = async (
+  userActivities: UserActivityInterface[], 
+  filterData: any, 
+  tradeStyle: 'buy' | 'sell', 
+  UserActivity: any, 
+  tempTrades: UserActivityInterface[],
+  USER_ADDRESS: string
+): Promise<void> => {
   try {
     const settings = filterData[tradeStyle];
     
@@ -209,7 +228,7 @@ const filterAndSaveTrades = async (userActivities: UserActivityInterface[], filt
         })));
         newTrades = [...new Set(processedTrades)];
         // await UserActivity.insertMany(newTrades);
-        await tradeExcutor(filterData, newTrades, tradeStyle);
+        await tradeExcutor(filterData, newTrades, tradeStyle, USER_ADDRESS);
         newTrades = [];
       }
     }
@@ -224,15 +243,17 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
   try {
     
     const slave = filterData.proxyAddress;
-
     slaves.push(slave);
 
     try {
       clearInterval(intervalPtr[slave]);
-      intervalPtr[slave] = setInterval(() => {
-          init();
-          console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
-          fetchTradeData(filterData);
+      intervalPtr[slave] = setInterval(async () => {
+        console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
+        const settings = await Settings.findOne({proxyAddress: slave});
+        if(settings){
+            const { address, activity, temp } = await init(settings);
+            fetchTradeData(settings, address, activity, temp);
+          } 
         }, FETCH_INTERVAL * 1000)
       } catch (error) {
         console.error('Error in monitoring loop:', error);

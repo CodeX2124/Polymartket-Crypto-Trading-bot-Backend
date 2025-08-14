@@ -3,8 +3,8 @@ import { UserActivityInterface, UserPositionInterface } from '../Interface/User'
 import { getUserActivityModel } from '../models/userHistory';
 
 const RETRY_LIMIT = process.env.RETRY_LIMIT || '0';
-const USER_ADDRESS = process.env.USER_ADDRESS || '';
-const UserActivity = getUserActivityModel(USER_ADDRESS);
+
+
 
 const postOrder = async (
     clobClient: ClobClient,
@@ -14,10 +14,12 @@ const postOrder = async (
     trade: UserActivityInterface,
     orderSize: number,
     limitSettingType: string,
-    filterPrice: number
+    filterPrice: number,
+    USER_ADDRESS: string
     // my_balance: number,
     // user_balance: number
 ) => {
+    const UserActivity = getUserActivityModel(USER_ADDRESS);
     //Merge strategy
     if (condition === 'merge') {
         console.log('Merging Strategy...');
