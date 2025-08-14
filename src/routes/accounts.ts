@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Account } from '../models/accounts';
 import { verifyAddress, validatePrivateKey } from '../controller/verifyAddress';
+import { Settings } from '../models/settings';
 
 const router = Router();
 
@@ -69,8 +70,12 @@ router.delete('/:id/:proxyWallet/:privateKey', async (req, res) => {
         proxyWallet: decodedProxyWallet, 
         privateKey: decodedPrivateKey 
       });
+
+      const result2 = await Settings.deleteOne({
+        proxyAddress: decodedProxyWallet,
+      })
   
-      if (result.deletedCount === 0) {
+      if (result.deletedCount === 0 && result2.deletedCount === 0) {
         return res.status(404).json({ 
           error: 'Account not found with these credentials' 
         });
