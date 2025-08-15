@@ -39,8 +39,8 @@ const startMonitoring = async (req: Request, res: Response) => {
 const stopMonitoring = async (req: Request, res: Response) => {
     try {
 
-        const address = req.body;
-
+        const address = req.body.proxyAddress;
+        console.log("address==>", address);
         await stopMonitor(address);
 
         res.status(200).json({

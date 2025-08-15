@@ -39,7 +39,7 @@ interface TradeFilterData {
 
 const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '1', 10);
 
-let slaves: any = [];
+let slaves: string[] = [];
 
 const init = async (settings: any): Promise<{
   address: string;
@@ -243,10 +243,17 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
   try {
     
     const slave = filterData.proxyAddress;
-    slaves.push(slave);
+    if (!slaves.includes(slave)) {
+      slaves.push(slave);
+    }
 
     try {
-      clearInterval(intervalPtr[slave]);
+      
+      if (intervalPtr[slave]) {
+        clearInterval(intervalPtr[slave]);
+        delete intervalPtr[slave];
+      }
+
       intervalPtr[slave] = setInterval(async () => {
         console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
         const settings = await Settings.findOne({proxyAddress: slave});
@@ -269,13 +276,24 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
 
 const stopMonitor = async (proxyAddress: string) => {
   try {
-
-      if(slaves.length > 0) {
-        const stopAddress = slaves.findOne((wallet: string) => wallet == proxyAddress)
-        clearInterval(intervalPtr[stopAddress]);
-        console.log("Successfully stopped")
+    
+    console.log(proxyAddress)
+    console.log(slaves)
+    const index = slaves.findIndex((wallet: string) => wallet === proxyAddress);
+    if (index !== -1) {
+      slaves.splice(index, 1);
+      
+      // Clear and remove the interval
+      if (intervalPtr[proxyAddress]) {
+        clearInterval(intervalPtr[proxyAddress]);
+        delete intervalPtr[proxyAddress];
       }
-  } catch (error){
+      
+      console.log("Successfully stopped monitoring for", proxyAddress);
+    } else {
+      console.log("No active monitor found for", proxyAddress);
+    }
+  } catch (error) {
     console.error('Stop initialization error:', error);
   }
   
