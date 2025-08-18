@@ -6,31 +6,37 @@ const router = Router();
 // Create account
 router.post('/', async (req, res) => {
     try {
-        const settings = req.body;
-
-        if (!settings.proxyAddress) {
-            return res.status(400).json({ error: 'proxyAddress is required' });
-        }
-
-        const savedSettings = await Settings.findOneAndUpdate(
-            { proxyAddress: settings.proxyAddress }, 
-            settings, 
-            {upsert: true}
-        );    
-
-        res.status(200).json({
-            success: true,
-            data: savedSettings
-        });
+        const { proxyAddress, ...settingsData } = req.body;
     
-    } catch (error: any) {
-        console.log(error)
-        if (error.code === 11000) {
-        res.status(400).json({ error: 'Setting already saved' });
-        } else {
-        res.status(500).json({ error: error.message });      
+        // Validate required fields
+        if (!proxyAddress) {
+          return res.status(400).json({ success: false, message: 'proxyAddress is required' });
         }
-    }
+    
+        // Upsert the settings
+        const updatedSettings = await Settings.findOneAndUpdate(
+          { proxyAddress },
+          { $set: settingsData },
+          {
+            new: true,
+            upsert: true,
+            runValidators: true,
+            setDefaultsOnInsert: true
+          }
+        );
+    
+        return res.status(200).json({ 
+          success: true, 
+          data: updatedSettings 
+        });
+      } catch (error) {
+        console.error('Error saving settings:', error);
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Error saving settings',
+          error: error
+        });
+      }
 });
 
 router.get('/:proxyAddress', async (req, res) => {

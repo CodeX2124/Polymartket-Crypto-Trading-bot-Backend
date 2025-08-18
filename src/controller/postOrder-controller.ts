@@ -1,6 +1,7 @@
 import { ClobClient, OrderType, Side } from '@polymarket/clob-client';
 import { UserActivityInterface, UserPositionInterface } from '../Interface/User';
 import { getUserActivityModel } from '../models/userHistory';
+import fetchData from './fetchdata-controlller';
 
 const RETRY_LIMIT = process.env.RETRY_LIMIT || '0';
 
@@ -15,7 +16,8 @@ const postOrder = async (
     orderSize: number,
     limitSettingType: string,
     filterPrice: number,
-    USER_ADDRESS: string
+    USER_ADDRESS: string,
+    filterData: any
     // my_balance: number,
     // user_balance: number
 ) => {
@@ -112,6 +114,19 @@ const postOrder = async (
                 if (parseFloat(minPriceAsk.price) > filterPrice){
                     console.log('Too big different price - do not copy');
                     await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+                    break;
+                }
+            }
+
+            if (filterData.maxAmount.isActive){
+                const my_positions: UserPositionInterface[] = await fetchData(
+                    `https://data-api.polymarket.com/positions?user=${filterData.proxyAddress}`
+                );
+                let totalBuyAmount = 0;
+                my_positions.map((position) => {
+                    totalBuyAmount += position.initialValue;
+                });
+                if(parseFloat(filterData.maxAmount.amount) - totalBuyAmount < orderSize){
                     break;
                 }
             }

@@ -54,17 +54,7 @@ const startTrading = async (
 
         console.log('My current balance:', my_balance);
         console.log('User current balance:', user_balance);
-        const UserActivity = getUserActivityModel(USER_ADDRESS);
-
-        if (filterData.maxAmount.isActive){
-            if(my_position?.avgPrice && my_position?.totalBought){
-                if (my_position?.avgPrice * my_position?.totalBought > parseFloat(filterData.maxAmount.amount)){
-                    console.log('The amount is over Max Amount');
-                    await UserActivity.updateOne({ _id: trade._id }, { bot: true });
-                    continue;
-                }
-            }
-        }
+        // const UserActivity = getUserActivityModel(USER_ADDRESS);        
 
         if (filterData[tradeStyle].Limitation.size && filterData[tradeStyle].Limitation.type){
             const filterPrice = parseFloat(filterData[tradeStyle].Limitation.size);
@@ -73,12 +63,12 @@ const startTrading = async (
                 if (filterData[tradeStyle].OrderSize.size && filterData[tradeStyle].OrderSize.type){
                     if(filterData[tradeStyle].OrderSize.type === 'amount') {
                         let amount = parseFloat(filterData[tradeStyle].OrderSize.size);
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'specific', filterPrice, USER_ADDRESS);
+                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'specific', filterPrice, USER_ADDRESS, filterData);
                     } 
         
                     if(filterData[tradeStyle].OrderSize.type === 'percentage') {
                         let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price;
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'specific', filterPrice, USER_ADDRESS);
+                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'specific', filterPrice, USER_ADDRESS, filterData);
                     }
                 }
                 
@@ -89,12 +79,12 @@ const startTrading = async (
                 if (filterData[tradeStyle].OrderSize.size && filterData[tradeStyle].OrderSize.type){
                     if(filterData[tradeStyle].OrderSize.type === 'amount') {
                         let amount = parseFloat(filterData[tradeStyle].OrderSize.size);
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'original', filterPrice, USER_ADDRESS);
+                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'original', filterPrice, USER_ADDRESS, filterData);
                     } 
         
                     if(filterData[tradeStyle].OrderSize.type === 'percentage') {
                         let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price;
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'original', filterPrice, USER_ADDRESS);
+                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'original', filterPrice, USER_ADDRESS, filterData);
                     }
                 }
                 
