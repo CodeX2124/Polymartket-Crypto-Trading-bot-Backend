@@ -49,48 +49,27 @@ const startTrading = async (
         const user_position = user_positions.find(
             (position: UserPositionInterface) => position.conditionId === trade.conditionId
         );
-        const my_balance = await getMyBalance(filterData.proxyAddress);
-        const user_balance = await getMyBalance(USER_ADDRESS);
+        // const my_balance = await getMyBalance(filterData.proxyAddress);
+        // const user_balance = await getMyBalance(USER_ADDRESS);
 
-        console.log('My current balance:', my_balance);
-        console.log('User current balance:', user_balance);
+        // console.log('My current balance:', my_balance);
+        // console.log('User current balance:', user_balance);
         // const UserActivity = getUserActivityModel(USER_ADDRESS);        
 
-        if (filterData[tradeStyle].Limitation.size && filterData[tradeStyle].Limitation.type){
-            const filterPrice = parseFloat(filterData[tradeStyle].Limitation.size);
-            if (filterData[tradeStyle].Limitation.type === "specific") {
-                
-                if (filterData[tradeStyle].OrderSize.size && filterData[tradeStyle].OrderSize.type){
-                    if(filterData[tradeStyle].OrderSize.type === 'amount') {
-                        let amount = parseFloat(filterData[tradeStyle].OrderSize.size);
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'specific', filterPrice, USER_ADDRESS, filterData);
-                    } 
-        
-                    if(filterData[tradeStyle].OrderSize.type === 'percentage') {
-                        let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price;
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'specific', filterPrice, USER_ADDRESS, filterData);
-                    }
-                }
-                
-            }
+        // if (filterData[tradeStyle].Limitation.size && filterData[tradeStyle].Limitation.type){
+        const filterPrice = parseFloat(filterData[tradeStyle].Limitation.size) || Infinity;
+        const LimitationType = filterData[tradeStyle].Limitation.type;
 
-            if (filterData[tradeStyle].Limitation.type === "original") {
-                
-                if (filterData[tradeStyle].OrderSize.size && filterData[tradeStyle].OrderSize.type){
-                    if(filterData[tradeStyle].OrderSize.type === 'amount') {
-                        let amount = parseFloat(filterData[tradeStyle].OrderSize.size);
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'original', filterPrice, USER_ADDRESS, filterData);
-                    } 
-        
-                    if(filterData[tradeStyle].OrderSize.type === 'percentage') {
-                        let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price;
-                        await postOrder(clobClient, trade.side, my_position, trade, amount, 'original', filterPrice, USER_ADDRESS, filterData);
-                    }
-                }
-                
-            }
-            
-        }
+        if(filterData[tradeStyle].OrderSize.type === 'amount') {
+            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) || trade.usdcSize;
+            await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
+        } 
+
+        if(filterData[tradeStyle].OrderSize.type === 'percentage') {
+            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price / 100 || trade.usdcSize;
+            await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
+        }   
+ 
     }
 
     newTrades = [];

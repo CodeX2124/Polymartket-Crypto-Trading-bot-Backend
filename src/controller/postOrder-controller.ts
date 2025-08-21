@@ -96,16 +96,16 @@ const postOrder = async (
             }, orderBook.asks[0]);
 
             console.log('Min price ask:', minPriceAsk);
-            if (parseFloat(minPriceAsk.price) - 0.05 > trade.price) {
-                console.log('Too big different price - do not copy');
-                await UserActivity.updateOne({ _id: trade._id }, { bot: true });
-                break;
-            }
+            // if (parseFloat(minPriceAsk.price) - 0.05 > trade.price) {
+            //     console.log('Too big different price - do not copy');
+            //     await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+            //     break;
+            // }
 
             if (limitSettingType == 'original') {
-                if (parseFloat(minPriceAsk.price) > filterPrice * trade.price / 100){
+                if (parseFloat(minPriceAsk.price) > 103 * trade.price / 100){
                     console.log('Too big different price - do not copy');
-                    await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+                    // await UserActivity.updateOne({ _id: trade._id }, { bot: true });
                     break;
                 }
             }
@@ -113,7 +113,7 @@ const postOrder = async (
             if (limitSettingType == 'specific'){
                 if (parseFloat(minPriceAsk.price) > filterPrice){
                     console.log('Too big different price - do not copy');
-                    await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+                    // await UserActivity.updateOne({ _id: trade._id }, { bot: true });
                     break;
                 }
             }
@@ -163,17 +163,17 @@ const postOrder = async (
                 console.log('Error posting order: retrying...', resp);
             }
         }
-        if (retry >= parseInt(RETRY_LIMIT)) {
-            await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
-        } else {
-            await UserActivity.updateOne({ _id: trade._id }, { bot: true });
-        }
+        // if (retry >= parseInt(RETRY_LIMIT)) {
+        //     await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
+        // } else {
+        //     await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+        // }
     } else if (condition === 'SELL') {          //Sell strategy
         console.log('Sell Strategy...');
         
         if (!my_position) {
             console.log('No position to sell');
-            await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+            // await UserActivity.updateOne({ _id: trade._id }, { bot: true });
         } 
         let retry = 0;
         while (orderSize > 0 && retry < parseInt(RETRY_LIMIT)) {
@@ -191,9 +191,9 @@ const postOrder = async (
             console.log('Max price bid:', maxPriceBid);
 
             if (limitSettingType == 'original') {
-                if (parseFloat(maxPriceBid.price) > filterPrice * trade.price / 100){
+                if (parseFloat(maxPriceBid.price) > 103 * trade.price / 100){
                     console.log('Too big different price - do not copy');
-                    await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+                    // await UserActivity.updateOne({ _id: trade._id }, { bot: true });
                     break;
                 }
             }
@@ -239,11 +239,11 @@ const postOrder = async (
                 console.log('Error posting order: retrying...', resp);
             }
         }
-        if (retry >= parseInt(RETRY_LIMIT)) {
-            await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
-        } else {
-            await UserActivity.updateOne({ _id: trade._id }, { bot: true });
-        }
+        // if (retry >= parseInt(RETRY_LIMIT)) {
+        //     await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
+        // } else {
+        //     await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+        // }
     } else {
         console.log('Condition not supported');
     }

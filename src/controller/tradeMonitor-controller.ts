@@ -186,7 +186,7 @@ const filterAndSaveTrades = async (
           const min = parseFloat(settings.Filter.byOrderSize.size.min) || 0;
           const max = parseFloat(settings.Filter.byOrderSize.size.max) || Infinity;        
           newTrades = newTrades.filter(activity => 
-              activity.size >= min && activity.size <= max 
+              activity.size * activity.price >= min && activity.size * activity.price <= max 
           );
       }
       
