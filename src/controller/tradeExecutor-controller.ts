@@ -59,14 +59,15 @@ const startTrading = async (
         // if (filterData[tradeStyle].Limitation.size && filterData[tradeStyle].Limitation.type){
         const filterPrice = parseFloat(filterData[tradeStyle].Limitation.size) || Infinity;
         const LimitationType = filterData[tradeStyle].Limitation.type;
+        let tradeAmount = trade.usdcSize > 1 ? trade.usdcSize.tofixed(2) : 1;
 
         if(filterData[tradeStyle].OrderSize.type === 'amount') {
-            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) || trade.usdcSize;
+            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) || tradeAmount;
             await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
         } 
 
         if(filterData[tradeStyle].OrderSize.type === 'percentage') {
-            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price / 100 || trade.usdcSize;
+            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price / 100 || tradeAmount;
             await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
         }   
  
