@@ -6,6 +6,7 @@ import {spinner} from './spinner-controller';
 import {getMyBalance} from './getMyBalance-controller';
 import {postOrder} from './postOrder-controller';
 import { ClobClient } from '@polymarket/clob-client';
+import { approveTrading } from './polymarket/approveTrading';
 
 
 const RETRY_LIMIT = parseInt(process.env.RETRY_LIMIT || '3');
@@ -30,6 +31,7 @@ const startTrading = async (
     USER_ADDRESS: string
 ) => {
 
+    await approveTrading(filterData.proxyAddress);
     for (let trade of newTrades) {
         console.log('Trade to copy:', trade);
         if(trade.bot){

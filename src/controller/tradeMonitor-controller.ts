@@ -40,6 +40,7 @@ interface TradeFilterData {
 const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '1', 10);
 
 let slaves: string[] = [];
+let ExecutedTrades: UserActivityInterface[] = [];
 
 const init = async (settings: any): Promise<{
   address: string;
@@ -92,23 +93,34 @@ const fetchTradeData = async (filterData: any, USER_ADDRESS: string, activity: a
   }
 };
 
-const filterByDaysTillEvent = async (activities: UserActivityInterface[], min: number, max: number): Promise<UserActivityInterface[]> => {
-  return activities.filter(async (activity) => {
-    try {
-      const markets = await fetchData(
-        `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
-      );
+const filterByDaysTillEvent = async (
+  activities: UserActivityInterface[], 
+  min: number, 
+  max: number
+): Promise<UserActivityInterface[]> => {
+  
+  // Map each activity to a Promise<boolean> showing if it passes filter
+  const results = await Promise.all(
+    activities.map(async (activity) => {
+      try {
+        const markets = await fetchData(
+          `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
+        );
+        if (!markets?.length) return false;
 
-      if (!markets?.length) return false;
+        const current = new Date();
+        const end = new Date(markets[0].endDate);
+        const diffInDays = (end.getTime() - current.getTime()) / (1000 * 60 * 60 * 24);
 
-      const current = new Date();
-      const end = new Date(markets[0].endDate);
-      const diffInDays = (end.getTime() - current.getTime()) / (1000 * 60 * 60 * 24);
-      return (diffInDays >= min && diffInDays <= max);
-    } catch {
-      return false;
-    }
-  });
+        return (diffInDays >= min && diffInDays <= max);
+      } catch {
+        return false;
+      }
+    })
+  );
+
+  // Filter original activities based on computed results
+  return activities.filter((_, i) => results[i]);
 };
 
 const filterByCategory = async (activities: UserActivityInterface[], list: string[]): Promise<UserActivityInterface[]> => {
@@ -117,50 +129,44 @@ const filterByCategory = async (activities: UserActivityInterface[], list: strin
     'olympics', 'formula1', 'f1', 'nascar', 'esports', 'cycling', 'wrestling', 'skateboarding', 'snowboarding', 'surfing', 'badminton', 'table-tennis',
     'handball', 'volleyball', 'lacrosse', 'auto-racing', 'horse-racing', 'darts', 'snooker', 'bowling', 'water-polo', 'swimming', 'track-and-field',
     'athletics', 'triathlon', 'sailing', 'sports', 'chess', 'uefa', 'league',
-    // Additional specific slugs
     'aaron-rodgers', 'ufc-fight-night', 'nba-finals', 'nba-champion', 'nba-draft', 'college-football', 'heisman', 'cfb', 'ncaa-football', 'nfl-draft', 'premier-league',
     'fifa-world-cup', 'world-cup', 'wnba', 'pll', 'premier-lacrosse-league', 'leagues-cup',
-    // Variations and common compound tag styles
-    'formula-1', 'table-tennis', 'water-polo', 'track-and-field', 'auto-racing', 'horse-racing', 'premier-lacrosse-league'];
+    'formula-1', 'table-tennis', 'water-polo', 'track-and-field', 'auto-racing', 'horse-racing', 'premier-lacrosse-league'
+  ];
 
-  
-  return activities.filter(async (activity) => {
-    try {     
+  let checkList = list.length === 0 ? sportsKeywords : list;
+
+  // Map each activity to a Promise<boolean> to filter asynchronously
+  const results = await Promise.all(
+    activities.map(async (activity) => {
+      try {
         const markets = await fetchData(
           `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
         );
-
         if (!markets?.length) return false;
-
         const market = markets[0];
-        let checkList = [];
-        if(list.length == 0){
-          checkList = sportsKeywords;          
-        } else {
-          checkList = list;
-        }
 
-        // Check tags
-        if (market.events?.tags?.some((tag: any) => 
-          checkList.includes(tag.slug?.toLowerCase()))) {
-          return true;
-        }
+        if (market.events?.tags?.some((tag: any) =>
+          checkList.includes(tag.slug?.toLowerCase())
+        )) return true;
 
-        // Check series
-        if (market.events?.series?.some((s: any) => 
-          checkList.includes(s.slug?.toLowerCase()))) {
-          return true;
-        }
+        if (market.events?.series?.some((s: any) =>
+          checkList.includes(s.slug?.toLowerCase())
+        )) return true;
 
-        // Check title/description
         const text = `${market.title || ''} ${market.description || ''}`.toLowerCase();
-        return checkList.some(keyword => text.includes(keyword));
-        // return false;   
-    } catch {
-      return false;
-    }
-  });
 
+        if (checkList.some(keyword => text.includes(keyword))) return true;
+
+        return false;
+      } catch {
+        return false;
+      }
+    })
+  );
+
+  // Filter activities based on results
+  return activities.filter((_, i) => results[i]);
 };
 
 const filterAndSaveTrades = async (
@@ -205,7 +211,9 @@ const filterAndSaveTrades = async (
       }
   
       if (settings.Filter.bySports.isActive) {
+          
           newTrades = await filterByCategory(newTrades, settings.Filter.bySports.sportsList);
+          console.log("bySports", newTrades.length);
       }
       
       if (settings.Filter.byMinMaxAmount.isActive) {
@@ -235,6 +243,7 @@ const filterAndSaveTrades = async (
         newTrades = [...new Set(processedTrades)];
         // await UserActivity.insertMany(newTrades);
         await tradeExcutor(filterData, newTrades, tradeStyle, USER_ADDRESS);
+        ExecutedTrades.push(...newTrades);
         newTrades = [];
       }
     }
@@ -269,9 +278,10 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
         temp = initResult.temp;
       } 
       
+      ExecutedTrades = temp;
       intervalPtr[slave] = setInterval(async () => {
         console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
-        fetchTradeData(settings, address, activity, temp);
+        fetchTradeData(settings, address, activity, ExecutedTrades);
       }, FETCH_INTERVAL * 1000);
     } catch (error) {
       console.error('Error in monitoring loop:', error);

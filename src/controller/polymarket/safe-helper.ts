@@ -2,6 +2,9 @@ import { TransactionResponse } from "@ethersproject/abstract-provider";
 import { BigNumber, Contract, ethers, Wallet } from "ethers";
 import { SafeTransaction, OperationType } from "../../Interface/Polymarket";
 import { Interface } from "ethers/lib/utils";
+import { multisendAbi } from "../../config/abi/multisendAbi";
+
+const SAFE_MULTISEND_INTERFACE = new Interface(multisendAbi);
 
 interface SplitSignature {
     r: string,
@@ -71,6 +74,10 @@ function joinHexData(hexData: string[]): string {
             return stripped.length % 2 === 0 ? stripped : "0" + stripped;
         })
         .join("")}`;
+}
+
+function getHexDataLength(hexData: string): number {
+    return Math.ceil((hexData.startsWith("0x") ? hexData.length - 2 : hexData.length) / 2);
 }
 
 function abiEncodePacked(...params: { type: string; value: any }[]): string {
@@ -161,4 +168,37 @@ export const signAndExecuteSafeTransaction = async (
         packedSig,
         overrides
     );
+}
+
+export const aggregateTransaction = (txns: SafeTransaction[]): SafeTransaction => {
+    let transaction: SafeTransaction;
+    if(txns.length == 1) {
+        transaction = txns[0];
+    } else {
+        transaction = createSafeMultisendTransaction(txns);
+    }
+    return transaction;
+}
+
+const createSafeMultisendTransaction = (txns: SafeTransaction[]): SafeTransaction => {
+    const data = SAFE_MULTISEND_INTERFACE.encodeFunctionData("multiSend", [
+        joinHexData(
+            txns.map(tx =>
+                abiEncodePacked(
+                    { type: "uint8", value: tx.operation },
+                    { type: "address", value: tx.to },
+                    { type: "uint256", value: tx.value },
+                    { type: "uint256", value: getHexDataLength(tx.data) },
+                    { type: "bytes", value: tx.data },
+                ),
+            ),
+        ),
+    ]);
+
+    return {
+        to: process.env.SAFE_MULTISEND_ADDRESS || "",
+        value: "0",
+        data: data,
+        operation: OperationType.DelegateCall,
+    }
 }
