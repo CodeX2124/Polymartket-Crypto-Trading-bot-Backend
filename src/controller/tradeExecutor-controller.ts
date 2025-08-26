@@ -7,7 +7,13 @@ import {getMyBalance} from './getMyBalance-controller';
 import {postOrder} from './postOrder-controller';
 import { ClobClient } from '@polymarket/clob-client';
 import { approveTrading } from './polymarket/approveTrading';
+import { approveTradingFactory } from './polymarket/approveTradingFactory';
 
+type aprroveCheckedType = {
+    [key: string]: boolean
+}
+
+const approveChecked: aprroveCheckedType = {}
 
 const RETRY_LIMIT = parseInt(process.env.RETRY_LIMIT || '3');
 
@@ -31,9 +37,26 @@ const startTrading = async (
     USER_ADDRESS: string
 ) => {
 
-    await approveTrading(filterData.proxyAddress);
+    if(approveChecked[filterData.proxyAddress] == undefined || approveChecked[filterData.proxyAddress] == false){
+        try{
+            await approveTrading(filterData.proxyAddress);
+        } catch{
+            console.log("Approve Error");
+        }
+    
+        try{
+            await approveTradingFactory(filterData.proxyAddress);
+        } catch{
+            console.log("Approve Factory Error");
+        }
+
+        approveChecked[filterData.proxyAddress] = true;
+    }
+
+    console.log("approveChecked[filterData.proxyAddress]:", approveChecked[filterData.proxyAddress])
+
     for (let trade of newTrades) {
-        console.log('Trade to copy:', trade);
+        // console.log('Trade to copy:', trade);
         if(trade.bot){
             continue;
         }
@@ -53,28 +76,55 @@ const startTrading = async (
         const user_position = user_positions.find(
             (position: UserPositionInterface) => position.conditionId === trade.conditionId
         );
-        // const my_balance = await getMyBalance(filterData.proxyAddress);
-        // const user_balance = await getMyBalance(USER_ADDRESS);
-
-        // console.log('My current balance:', my_balance);
-        // console.log('User current balance:', user_balance);
-        // const UserActivity = getUserActivityModel(USER_ADDRESS);        
-
+        
         // if (filterData[tradeStyle].Limitation.size && filterData[tradeStyle].Limitation.type){
         const filterPrice = parseFloat(filterData[tradeStyle].Limitation.size) || Infinity;
         const LimitationType = filterData[tradeStyle].Limitation.type;
-        let tradeAmount = trade.usdcSize > 1 ? trade.usdcSize.tofixed(2) : 1;
+        let tradeAmount = 0;
+        let amount = 0;
+        if(trade.side == "BUY"){
+            tradeAmount = trade.usdcSize > 1 ? trade.usdcSize.tofixed(2) : 1;
+            if(filterData[tradeStyle].OrderSize.type === 'amount') {
+                amount = parseFloat(filterData[tradeStyle].OrderSize.size) || tradeAmount;
+                await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
+            } 
+    
+            if(filterData[tradeStyle].OrderSize.type === 'percentage') {
+                amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price / 100 || tradeAmount;
+                await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
+            }   
+        }  
+        if (trade.side == "SELL")
+        {
+            tradeAmount = trade.size > 1 ? trade.size.tofixed(2) : 1;
+            let sellAmount = 0;
 
-        if(filterData[tradeStyle].OrderSize.type === 'amount') {
-            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) || tradeAmount;
-            await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
-        } 
+            if(my_position){
+                if(filterData[tradeStyle].OrderSize.type === 'amount') {
+                    if(parseFloat(filterData[tradeStyle].OrderSize.size) > my_position?.initialValue) {
+                        sellAmount = Number(my_position.size.toFixed(2));
+                    } else {
+                        sellAmount = Number((parseFloat(filterData[tradeStyle].OrderSize.size) / my_position.initialValue * my_position.size).toFixed(2))
+                    }
+                    amount = sellAmount || tradeAmount;
+                    // console.log("amount:", sellAmount);
+                    await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
 
-        if(filterData[tradeStyle].OrderSize.type === 'percentage') {
-            let amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price / 100 || tradeAmount;
-            await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
-        }   
- 
+                } 
+        
+                if(filterData[tradeStyle].OrderSize.type === 'percentage') {
+                    if(parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size / 100 > my_position?.size) {
+                        sellAmount = Number(my_position.size.toFixed(2));
+                    } else {
+                        sellAmount = Number((parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size / 100).toFixed(2))
+                    }
+                    amount =sellAmount || tradeAmount;
+                    await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
+
+                } 
+            }
+        }
+        
     }
 
     newTrades = [];

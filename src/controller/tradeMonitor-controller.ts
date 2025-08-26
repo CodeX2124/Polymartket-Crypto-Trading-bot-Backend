@@ -48,6 +48,7 @@ const init = async (settings: any): Promise<{
   temp: UserActivityInterface[];
 }> => {
   try {
+    
     let USER_ADDRESS = "";
     let account = await Account.findOne({proxyWallet: settings.proxyAddress});
     if(account){
@@ -193,8 +194,9 @@ const filterAndSaveTrades = async (
       !tempTrades.some(existing => existing.transactionHash === activity.transactionHash) && activity.side.toLowerCase() === tradeStyle
     );    
 
-    console.log("length:", newTrades.length);
     if(newTrades.length > 0){
+
+      newTrades = newTrades.filter(activity => activity.type == "TRADE");
       // Apply filters
       if (settings.Filter.byOrderSize.isActive) {
           const min = parseFloat(settings.Filter.byOrderSize.size.min) || 0;
@@ -221,7 +223,7 @@ const filterAndSaveTrades = async (
       if (settings.Filter.bySports.isActive) {
           
           newTrades = await filterByCategory(newTrades, settings.Filter.bySports.sportsList);
-          console.log("bySports", newTrades.length);
+          // console.log("bySports", newTrades.length);
       }
       
       if (settings.Filter.byMinMaxAmount.isActive) {
@@ -274,7 +276,7 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
         delete intervalPtr[slave];
       }
 
-      const settings = await Settings.findOne({proxyAddress: slave});
+      let settings = await Settings.findOne({proxyAddress: slave});
       let address = "";
       let activity: any = null;
       let temp: UserActivityInterface[] = [];
@@ -289,7 +291,7 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
       
       ExecutedTrades = temp;
       intervalPtr[slave] = setInterval(async () => {
-        console.log(`Trade Monitor is running every ${FETCH_INTERVAL} seconds`);
+        settings = await Settings.findOne({proxyAddress: slave});
         fetchTradeData(settings, address, activity, ExecutedTrades);
       }, FETCH_INTERVAL * 1000);
     } catch (error) {

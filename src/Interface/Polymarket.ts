@@ -29,6 +29,13 @@ export enum CallType {
       data: string;
       value: string;
   }
+
+  export interface ProxyTransaction {
+    to: string;
+    typeCode: CallType;
+    data: string;
+    value: string;
+}
   
   export enum FeeTier {
       Slow = "safeLow",
