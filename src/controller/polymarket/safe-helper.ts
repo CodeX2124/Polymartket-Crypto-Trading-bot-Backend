@@ -148,7 +148,7 @@ export const signAndExecuteSafeTransaction = async (
         nonce
     );
     const rsvSignature = await signTransactionHash(signer, txHash);
-    console.log("gasPrice:", gasPrice)
+    // console.log("gasPrice:", gasPrice)
     const packedSig = abiEncodePacked(
         { type: "uint256", value: rsvSignature.r },
         { type: "uint256", value: rsvSignature.s },

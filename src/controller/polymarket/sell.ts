@@ -17,6 +17,9 @@ export async function sellPositions(req: Request, res: Response) {
         const user_activities: UserActivityInterface[] = await fetchData(
             `https://data-api.polymarket.com/activity?user=${position.proxyWallet}`
         );
+        if (!user_activities) {
+            return res.status(404).json({ error: `No activity found for conditionId: ${position.conditionId}` });
+        }
         
         const user_activity = user_activities.find(
             (activity: UserActivityInterface) => activity.conditionId === position.conditionId

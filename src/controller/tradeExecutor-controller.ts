@@ -42,9 +42,11 @@ const startTrading = async (
         const my_positions: UserPositionInterface[] = await fetchData(
             `https://data-api.polymarket.com/positions?user=${filterData.proxyAddress}`
         );
+        if (!my_positions) continue;
         const user_positions: UserPositionInterface[] = await fetchData(
             `https://data-api.polymarket.com/positions?user=${USER_ADDRESS}`
         );
+        if (!user_positions) continue;
         const my_position = my_positions.find(
             (position: UserPositionInterface) => position.conditionId === trade.conditionId
         );

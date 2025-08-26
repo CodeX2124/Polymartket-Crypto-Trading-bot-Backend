@@ -58,6 +58,11 @@ const init = async (settings: any): Promise<{
     let tempTrades: UserActivityInterface[] = await fetchData(
       `https://data-api.polymarket.com/activity?user=${USER_ADDRESS}&limit=500&offset=0`
     );
+    if (!tempTrades) return {
+      address: USER_ADDRESS,
+      activity: UserActivity,
+      temp: [],
+    }
     // let tempTrades: UserActivityInterface[] = (await UserActivity.find().exec()).map((trade) => trade as UserActivityInterface);
     
     return {
@@ -78,6 +83,7 @@ const fetchTradeData = async (filterData: any, USER_ADDRESS: string, activity: a
     let userActivities: UserActivityInterface[] = await fetchData(
       `https://data-api.polymarket.com/activity?user=${USER_ADDRESS}&limit=500&offset=0`
     );
+    if (!userActivities) throw 'fetchData error';
     
     if (filterData.buy.Filter.byOrderSize.isActive || filterData.buy.Filter.bySports.isActive || filterData.buy.Filter.byMinMaxAmount.isActive || filterData.buy.Filter.byDaysTillEvent.isActive || filterData.buy.Filter.byPrice.isActive ) {
       await filterAndSaveTrades(userActivities, filterData, 'buy', activity, tempTrades, USER_ADDRESS);
@@ -106,6 +112,7 @@ const filterByDaysTillEvent = async (
         const markets = await fetchData(
           `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
         );
+        if (!markets) return false;
         if (!markets?.length) return false;
 
         const current = new Date();
@@ -143,6 +150,7 @@ const filterByCategory = async (activities: UserActivityInterface[], list: strin
         const markets = await fetchData(
           `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
         );
+        if (!markets) return false;
         if (!markets?.length) return false;
         const market = markets[0];
 
@@ -273,6 +281,7 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
       
       if(settings){
         const initResult = await init(settings);
+        if (!initResult.temp) throw 'fetchData and init error';
         address = initResult.address;
         activity = initResult.activity;
         temp = initResult.temp;

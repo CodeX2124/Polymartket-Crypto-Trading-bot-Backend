@@ -122,6 +122,7 @@ const postOrder = async (
                 const my_positions: UserPositionInterface[] = await fetchData(
                     `https://data-api.polymarket.com/positions?user=${filterData.proxyAddress}`
                 );
+                if (!my_positions) continue;
                 let totalBuyAmount = 0;
                 my_positions.map((position) => {
                     totalBuyAmount += position.initialValue;

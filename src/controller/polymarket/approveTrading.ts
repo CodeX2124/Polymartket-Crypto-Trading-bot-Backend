@@ -63,7 +63,7 @@ const approveTrading = async (proxyAddress: any) => {
 
     const safeTxn = aggregateTransaction(safeTxns);
     const txn = await signAndExecuteSafeTransaction(wallet, safe, safeTxn, {gasPrice: 200000000000});
-    
+    // safe.approve()
     console.log(`Txn hash: ${txn.hash}`);
     await txn.wait();
 
