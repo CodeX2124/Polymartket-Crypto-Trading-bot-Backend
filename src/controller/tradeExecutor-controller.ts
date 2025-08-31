@@ -1,152 +1,255 @@
-import {createClobClient} from './createClobClient-controller';
+import { createClobClient } from './createClobClient-controller';
 import { UserActivityInterface, UserPositionInterface } from '../Interface/User';
 import { getUserActivityModel } from '../models/userHistory';
 import fetchData from './fetchdata-controlller';
-import {spinner} from './spinner-controller';
-import {getMyBalance} from './getMyBalance-controller';
-import {postOrder} from './postOrder-controller';
+import { spinner } from './spinner-controller';
+import { getMyBalance } from './getMyBalance-controller';
+import { postOrder } from './postOrder-controller';
 import { ClobClient } from '@polymarket/clob-client';
 import { approveTrading } from './polymarket/approveTrading';
 import { approveTradingFactory } from './polymarket/approveTradingFactory';
+import { TradeSettingsState } from "../Interface/Setting";
 
-type aprroveCheckedType = {
-    [key: string]: boolean
+type ApproveCheckedType = {
+    [key: string]: boolean;
 }
 
-const approveChecked: aprroveCheckedType = {}
+const approveChecked: ApproveCheckedType = {};
+const RETRY_LIMIT = parseInt(process.env.RETRY_LIMIT || '3', 10);
 
-const RETRY_LIMIT = parseInt(process.env.RETRY_LIMIT || '3');
+interface TradeExecutorParams {
+    filterData: TradeSettingsState;
+    newTrades: UserActivityInterface[];
+    tradeStyle: 'buy' | 'sell';
+    userAddress: string;
+}
 
-let temp_trades: UserActivityInterface[] = [];
+interface PositionData {
+    myPositions: UserPositionInterface[];
+    userPositions: UserPositionInterface[];
+}
 
-
-// const readTempTrade = async () => {
-//     temp_trades = (
-//         await UserActivity.find({
-//             $and: [{ type: 'TRADE' }, { bot: false }, { botExecutedTime: { $lt: RETRY_LIMIT } }],
-//         }).exec()
-//     ).map((trade) => trade as UserActivityInterface);
-
-// };
-
-const startTrading = async (
-    clobClient: ClobClient, 
-    filterData: any, 
-    newTrades: any, 
-    tradeStyle: string, 
-    USER_ADDRESS: string
-) => {
-
-    if(approveChecked[filterData.proxyAddress] == undefined || approveChecked[filterData.proxyAddress] == false){
-        try{
-            await approveTrading(filterData.proxyAddress);
-        } catch{
-            console.log("Approve Error");
-        }
-    
-        try{
-            await approveTradingFactory(filterData.proxyAddress);
-        } catch{
-            console.log("Approve Factory Error");
+/**
+ * Ensures trading is approved for the proxy address
+ */
+const ensureTradingApproved = async (proxyAddress: string): Promise<void> => {
+    if (approveChecked[proxyAddress] === undefined || approveChecked[proxyAddress] === false) {
+        try {
+            await approveTrading(proxyAddress);
+            console.log(`✅ Trading approved for ${proxyAddress}`);
+        } catch (error) {
+            console.error(`❌ Approve trading failed for ${proxyAddress}:`, error);
+            throw new Error(`Trading approval failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
-        approveChecked[filterData.proxyAddress] = true;
+        try {
+            await approveTradingFactory(proxyAddress);
+            console.log(`✅ Factory trading approved for ${proxyAddress}`);
+        } catch (error) {
+            console.error(`❌ Factory approve failed for ${proxyAddress}:`, error);
+            throw new Error(`Factory approval failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        approveChecked[proxyAddress] = true;
     }
-
-    console.log("approveChecked[filterData.proxyAddress]:", approveChecked[filterData.proxyAddress])
-
-    for (let trade of newTrades) {
-        // console.log('Trade to copy:', trade);
-        if(trade.bot){
-            continue;
-        }
-        
-        // const market = await clobClient.getMarket(trade.conditionId);
-        const my_positions: UserPositionInterface[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${filterData.proxyAddress}`
-        );
-        if (!my_positions) continue;
-        const user_positions: UserPositionInterface[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${USER_ADDRESS}`
-        );
-        if (!user_positions) continue;
-        const my_position = my_positions.find(
-            (position: UserPositionInterface) => position.conditionId === trade.conditionId
-        );
-        const user_position = user_positions.find(
-            (position: UserPositionInterface) => position.conditionId === trade.conditionId
-        );
-        
-        // if (filterData[tradeStyle].Limitation.size && filterData[tradeStyle].Limitation.type){
-        const filterPrice = parseFloat(filterData[tradeStyle].Limitation.size) || Infinity;
-        const LimitationType = filterData[tradeStyle].Limitation.type;
-        let tradeAmount = 0;
-        let amount = 0;
-        if(trade.side == "BUY"){
-            tradeAmount = trade.usdcSize > 1 ? trade.usdcSize.tofixed(2) : 1;
-            if(filterData[tradeStyle].OrderSize.type === 'amount') {
-                amount = parseFloat(filterData[tradeStyle].OrderSize.size) || tradeAmount;
-                await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
-            } 
-    
-            if(filterData[tradeStyle].OrderSize.type === 'percentage') {
-                amount = parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size * trade.price / 100 || tradeAmount;
-                await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
-            }   
-        }  
-        if (trade.side == "SELL")
-        {
-            tradeAmount = trade.size > 1 ? trade.size.tofixed(2) : 1;
-            let sellAmount = 0;
-
-            if(my_position){
-                if(filterData[tradeStyle].OrderSize.type === 'amount') {
-                    if(parseFloat(filterData[tradeStyle].OrderSize.size) > my_position?.initialValue) {
-                        sellAmount = Number(my_position.size.toFixed(2));
-                    } else {
-                        sellAmount = Number((parseFloat(filterData[tradeStyle].OrderSize.size) / my_position.initialValue * my_position.size).toFixed(2))
-                    }
-                    amount = sellAmount || tradeAmount;
-                    // console.log("amount:", sellAmount);
-                    await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
-
-                } 
-        
-                if(filterData[tradeStyle].OrderSize.type === 'percentage') {
-                    if(parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size / 100 > my_position?.size) {
-                        sellAmount = Number(my_position.size.toFixed(2));
-                    } else {
-                        sellAmount = Number((parseFloat(filterData[tradeStyle].OrderSize.size) * trade.size / 100).toFixed(2))
-                    }
-                    amount =sellAmount || tradeAmount;
-                    await postOrder(clobClient, trade.side, my_position, trade, amount, LimitationType, filterPrice, USER_ADDRESS, filterData);
-
-                } 
-            }
-        }
-        
-    }
-
-    newTrades = [];
 };
 
-const tradeExcutor = async (filterData: any, newTrades: any, tradeStyle: string, USER_ADDRESS: string) => {
-    
-    const clobClient = await createClobClient(filterData.proxyAddress);
-    console.log(`Executing Copy Trading`);
-    try{
-        // await readTempTrade();
-        if (newTrades.length > 0) {
-            console.log('💥 New transactions found 💥');
-            spinner.stop();
-            await startTrading(clobClient, filterData, newTrades, tradeStyle, USER_ADDRESS);
-        } else {
-            spinner.start('Waiting for new transactions');
+/**
+ * Fetches positions for both proxy and target wallets
+ */
+const fetchPositions = async (proxyAddress: string, userAddress: string): Promise<PositionData> => {
+    const [myPositions, userPositions] = await Promise.all([
+        fetchData(`https://data-api.polymarket.com/positions?user=${proxyAddress}`),
+        fetchData(`https://data-api.polymarket.com/positions?user=${userAddress}`)
+    ]);
+
+    return {
+        myPositions: myPositions || [],
+        userPositions: userPositions || []
+    };
+};
+
+/**
+ * Calculates the appropriate trade amount based on order size type
+ */
+const calculateTradeAmount = (
+    trade: UserActivityInterface,
+    orderSize: string,
+    orderType: string,
+    myPosition?: UserPositionInterface
+): number => {
+    const baseAmount = trade.side === "BUY" 
+        ? (trade.usdcSize > 1 ? trade.usdcSize : 1)
+        : (trade.size > 1 ? trade.size : 1);
+
+    if (orderType === 'amount') {
+        const specifiedAmount = parseFloat(orderSize) || baseAmount;
+        
+        // For sell orders, ensure we don't exceed available position
+        if (trade.side === "SELL" && myPosition) {
+            if (specifiedAmount > myPosition.initialValue) {
+                return myPosition.size;
+            } else {
+                return Number((specifiedAmount / myPosition.initialValue * myPosition.size).toFixed(2));
+            }
         }
-    } catch {
-        console.log("Error");
+        return specifiedAmount;
     }
-    
+
+    if (orderType === 'percentage') {
+        const percentage = parseFloat(orderSize) || 100;
+        const calculatedAmount = percentage * trade.size * trade.price / 100;
+        
+        // For sell orders, ensure we don't exceed available position
+        if (trade.side === "SELL" && myPosition) {
+            if (calculatedAmount > myPosition.size) {
+                return myPosition.size;
+            } else {
+                return Number(calculatedAmount.toFixed(2));
+            }
+        }
+        return calculatedAmount > baseAmount ? calculatedAmount : baseAmount;
+    }
+
+    return baseAmount;
+};
+
+/**
+ * Processes a single trade with proper error handling
+ */
+const processSingleTrade = async (
+    clobClient: ClobClient,
+    trade: UserActivityInterface,
+    tradeStyle: 'buy' | 'sell', // Explicitly type as 'buy' | 'sell'
+    filterData: TradeSettingsState,
+    userAddress: string,
+    positions: PositionData
+): Promise<void> => {
+    try {
+        if (trade.bot) {
+            console.log(`⏭️ Skipping bot-executed trade: ${trade.transactionHash}`);
+            return;
+        }
+
+        const myPosition = positions.myPositions.find(
+            position => position.conditionId === trade.conditionId
+        );
+
+        const userPosition = positions.userPositions.find(
+            position => position.conditionId === trade.conditionId
+        );
+
+        // Safely access the tradeStyle property
+        const tradeSettings = filterData[tradeStyle];
+        const filterPrice = parseFloat(tradeSettings.Limitation.size) || Infinity;
+        const limitationType = tradeSettings.Limitation.type;
+
+        const amount = calculateTradeAmount(
+            trade,
+            tradeSettings.OrderSize.size,
+            tradeSettings.OrderSize.type,
+            myPosition
+        );
+
+        await postOrder(
+            clobClient,
+            trade.side,
+            myPosition,
+            trade,
+            amount,
+            limitationType,
+            filterPrice,
+            userAddress,
+            filterData
+        );
+
+        console.log(`✅ Successfully processed ${trade.side} trade for condition: ${trade.conditionId}`);
+
+    } catch (error) {
+        console.error(`❌ Failed to process trade ${trade.transactionHash}:`, error);
+        // Continue with next trade instead of failing completely
+    }
+};
+
+/**
+ * Main trading execution function
+ */
+const startTrading = async (
+    clobClient: ClobClient,
+    filterData: TradeSettingsState,
+    newTrades: UserActivityInterface[],
+    tradeStyle: 'buy' | 'sell', // Explicitly type as 'buy' | 'sell'
+    userAddress: string
+): Promise<void> => {
+    try {
+        // Ensure trading is approved
+        await ensureTradingApproved(filterData.proxyAddress);
+
+        console.log(`🔄 Starting ${tradeStyle} trading for ${newTrades.length} trades`);
+
+        // Fetch positions once for all trades
+        const positions = await fetchPositions(filterData.proxyAddress, userAddress);
+
+        // Process trades sequentially to avoid rate limiting
+        for (const trade of newTrades) {
+            await processSingleTrade(clobClient, trade, tradeStyle, filterData, userAddress, positions);
+        }
+
+        console.log(`🎯 Completed processing ${newTrades.length} ${tradeStyle} trades`);
+
+    } catch (error) {
+        console.error(`❌ Failed to start trading:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Trade executor main function
+ */
+const tradeExcutor = async ({
+    filterData,
+    newTrades,
+    tradeStyle,
+    userAddress
+}: TradeExecutorParams): Promise<void> => {
+    console.log(`🚀 Executing Copy Trading for ${tradeStyle}`);
+
+    try {
+        // Validate input parameters
+        if (!filterData?.proxyAddress) {
+            throw new Error('Invalid filter data: proxyAddress is required');
+        }
+
+        if (!newTrades || newTrades.length === 0) {
+            console.log('⏭️ No trades to execute');
+            spinner.start('Waiting for new transactions');
+            return;
+        }
+
+        // Type guard to ensure tradeStyle is valid
+        if (tradeStyle !== 'buy' && tradeStyle !== 'sell') {
+            throw new Error(`Invalid trade style: ${tradeStyle}. Must be 'buy' or 'sell'`);
+        }
+
+        // Initialize CLOB client
+        const clobClient = await createClobClient(filterData.proxyAddress);
+        if (!clobClient) {
+            throw new Error('Failed to initialize CLOB client');
+        }
+
+        console.log(`✅ CLOB client initialized for proxy: ${filterData.proxyAddress}`);
+        console.log(`📊 Processing ${newTrades.length} ${tradeStyle} trades`);
+        console.log('💥 New transactions found 💥');
+
+        // Execute trading
+        await startTrading(clobClient, filterData, newTrades, tradeStyle, userAddress);
+
+        console.log(`✅ Successfully executed ${newTrades.length} ${tradeStyle} trades`);
+
+    } catch (error) {
+        console.error(`❌ Trade execution failed:`, error);
+        throw error;
+    }
 };
 
 export default tradeExcutor;

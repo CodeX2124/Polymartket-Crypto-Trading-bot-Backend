@@ -3,26 +3,23 @@ import {tradeMonitor} from './tradeMonitor-controller';
 import { Request, Response } from 'express';
 import { stopMonitor } from './tradeMonitor-controller';
 
-let monitoringSettings: any = null;
-
 const startMonitoring = async (req: Request, res: Response) => {
     try {
 
         // await connectDB();
         //Get data from frontend
-        monitoringSettings = req.body;
-        console.log('Received monitoring settings:', monitoringSettings);
+        let monitoringWallet = req.body;
+        console.log('Received monitoring settings:', monitoringWallet);
 
         // const clobClient = await createClobClient();
 
-        tradeMonitor(monitoringSettings);  //Monitor target user's transactions
+        tradeMonitor(monitoringWallet.proxyAddress);  //Monitor target user's transactions
 
         res.status(200).json({
             success: true,
             message: 'Monitoring started with settings',
             data: {
-                userAddress: monitoringSettings.proxyAddress,
-                settings: monitoringSettings
+                userAddress: monitoringWallet.proxyAddress,
             }
         });
 

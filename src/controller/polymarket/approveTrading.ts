@@ -4,6 +4,7 @@ import { encodeErc1155Approve, encodeErc20Approve } from "./encode";
 import { aggregateTransaction, signAndExecuteSafeTransaction } from "./safe-helper";
 import { OperationType, SafeTransaction } from "../../Interface/Polymarket";
 import { Account } from '../../models/accounts';
+import { getGasPrice } from "./getGasPrice";
 
 let PRIVATE_KEY = "";
 
@@ -62,7 +63,8 @@ const approveTrading = async (proxyAddress: any) => {
     }
 
     const safeTxn = aggregateTransaction(safeTxns);
-    const txn = await signAndExecuteSafeTransaction(wallet, safe, safeTxn, {gasPrice: 200000000000});
+    const gasPrice = await getGasPrice();
+    const txn = await signAndExecuteSafeTransaction(wallet, safe, safeTxn, {gasPrice: gasPrice.maxFee});
     // safe.approve()
     console.log(`Txn hash: ${txn.hash}`);
     await txn.wait();

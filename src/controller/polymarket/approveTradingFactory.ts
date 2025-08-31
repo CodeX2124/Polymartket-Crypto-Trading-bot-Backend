@@ -6,6 +6,7 @@ import { proxyFactoryAbi } from "../../config/abi/proxyFactoryAbi";
 import { encodeErc1155Approve, encodeErc20Approve } from "./encode";
 import { ProxyTransaction, CallType } from "../../Interface/Polymarket";
 import { Account } from '../../models/accounts';
+import { getGasPrice } from "./getGasPrice";
 
 const PROXY_WALLET_FACTORY_ADDRESS = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052";
 let PRIVATE_KEY = "";
@@ -62,7 +63,8 @@ const approveTradingFactory = async (proxyAddress: any) => {
         });
     }
 
-    const txn = await factory.proxy(txns, { gasPrice: 100000000000 });
+    const gasPrice = await getGasPrice();
+    const txn = await factory.proxy(txns, { gasPrice: gasPrice.maxFee });
 
     console.log(`Txn hash: ${txn.hash}`);
     await txn.wait();

@@ -5,6 +5,7 @@ import fetchData from './fetchdata-controlller';
 import { Settings } from '../models/settings';
 import tradeExcutor from './tradeExecutor-controller';
 import { Account } from '../models/accounts';
+import { TradeSettingsState, MonitorContext } from "../Interface/Setting";
 
 type intervalPtrType = {
   [key: string]: NodeJS.Timeout
@@ -12,86 +13,77 @@ type intervalPtrType = {
 
 const intervalPtr: intervalPtrType = {}
 
-interface FilterSettings {
-  byPrice: boolean;
-  price: {
-    min: string;
-    max: string;
-  };
-  byOrder: boolean;
-  orderSize: {
-    min: string;
-    max: string;
-  };
-  byCategory: boolean;
-  byTillDayEvent: boolean;
-  byAmount: boolean;
-  amount: {
-    min: string;
-    max: string;
-  };
-}
-
-interface TradeFilterData {
-  buy: FilterSettings;
-  sell: FilterSettings;
-}
-
 const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '1', 10);
+const executedTrades: UserActivityInterface[] = [];
+const activeMonitors: string[] = [];
 
-let slaves: string[] = [];
-let ExecutedTrades: UserActivityInterface[] = [];
-
-const init = async (settings: any): Promise<{
-  address: string;
-  activity: any; 
-  temp: UserActivityInterface[];
-}> => {
+const init = async (settings: TradeSettingsState): Promise<MonitorContext> => {
   try {
-    
-    let USER_ADDRESS = "";
-    let account = await Account.findOne({proxyWallet: settings.proxyAddress});
-    if(account){
-      USER_ADDRESS = account.targetWallet;
+    let TARGET_ADDRESS = "";
+    const account = await Account.findOne({ proxyWallet: settings.proxyAddress });
+    if (account) {
+      TARGET_ADDRESS = account.targetWallet;
     }
 
-    let UserActivity = getUserActivityModel(USER_ADDRESS);
-    let tempTrades: UserActivityInterface[] = await fetchData(
-      `https://data-api.polymarket.com/activity?user=${USER_ADDRESS}&limit=500&offset=0`
+    const UserActivity = getUserActivityModel(TARGET_ADDRESS);
+    const tempTrades: UserActivityInterface[] = await fetchData(
+      `https://data-api.polymarket.com/activity?user=${TARGET_ADDRESS}&limit=500&offset=0`
     );
-    if (!tempTrades) return {
-      address: USER_ADDRESS,
-      activity: UserActivity,
-      temp: [],
-    }
-    // let tempTrades: UserActivityInterface[] = (await UserActivity.find().exec()).map((trade) => trade as UserActivityInterface);
-    
+
     return {
-      address: USER_ADDRESS,
+      address: TARGET_ADDRESS,
       activity: UserActivity,
-      temp: tempTrades
+      tempTrades: tempTrades || []
     };
-        
   } catch (error) {
     console.error('Error initializing trades:', error);
     throw error;
   }
 };
 
-const fetchTradeData = async (filterData: any, USER_ADDRESS: string, activity: any, tempTrades: UserActivityInterface[]): Promise<void> => {
+const hasActiveFilters = (filterType: any): boolean => {
+  if (!filterType?.Filter) return false;
+  
+  const { Filter } = filterType;
+  return Filter.byOrderSize?.isActive || 
+         Filter.bySports?.isActive || 
+         Filter.byMinMaxAmount?.isActive || 
+         Filter.byDaysTillEvent?.isActive || 
+         Filter.byPrice?.isActive;
+};
+
+const fetchTradeData = async (
+  filterData: TradeSettingsState,
+  context: MonitorContext
+): Promise<void> => {
   try {
-    
-    let userActivities: UserActivityInterface[] = await fetchData(
-      `https://data-api.polymarket.com/activity?user=${USER_ADDRESS}&limit=500&offset=0`
-    );
-    if (!userActivities) throw 'fetchData error';
-    
-    if (filterData.buy.Filter.byOrderSize.isActive || filterData.buy.Filter.bySports.isActive || filterData.buy.Filter.byMinMaxAmount.isActive || filterData.buy.Filter.byDaysTillEvent.isActive || filterData.buy.Filter.byPrice.isActive ) {
-      await filterAndSaveTrades(userActivities, filterData, 'buy', activity, tempTrades, USER_ADDRESS);
+    // Validate filterData
+    if (!filterData) {
+      console.warn('No filter data provided or invalid format');
+      return;
     }
 
-    if (filterData.sell.Filter.byOrderSize.isActive || filterData.sell.Filter.bySports.isActive || filterData.sell.Filter.byMinMaxAmount.isActive || filterData.sell.Filter.byDaysTillEvent.isActive || filterData.sell.Filter.byPrice.isActive ) {
-      await filterAndSaveTrades(userActivities, filterData, 'sell', activity, tempTrades, USER_ADDRESS);
+    const hasBuyFilters = hasActiveFilters(filterData.buy);
+    const hasSellFilters = hasActiveFilters(filterData.sell);
+
+    // Only fetch data if filters are active
+    if (!hasBuyFilters && !hasSellFilters) {
+      console.log('No active filters, skipping data fetch');
+      return;
+    }
+
+    let userActivities: UserActivityInterface[] = await fetchData(
+      `https://data-api.polymarket.com/activity?user=${context.address}&limit=500&offset=0`
+    );
+    
+    if (!userActivities) throw 'fetchData error';
+    
+    if (hasBuyFilters) {
+      await filterAndSaveTrades(userActivities, filterData, 'buy', context);
+    }
+
+    if (hasSellFilters) {
+      await filterAndSaveTrades(userActivities, filterData, 'sell', context);
     }
     
   } catch (error) {
@@ -105,30 +97,29 @@ const filterByDaysTillEvent = async (
   min: number, 
   max: number
 ): Promise<UserActivityInterface[]> => {
-  
-  // Map each activity to a Promise<boolean> showing if it passes filter
-  const results = await Promise.all(
-    activities.map(async (activity) => {
-      try {
-        const markets = await fetchData(
-          `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
-        );
-        if (!markets) return false;
-        if (!markets?.length) return false;
+  const filteredActivities: UserActivityInterface[] = [];
 
-        const current = new Date();
-        const end = new Date(markets[0].endDate);
-        const diffInDays = (end.getTime() - current.getTime()) / (1000 * 60 * 60 * 24);
+  for (const activity of activities) {
+    try {
+      const markets = await fetchData(
+        `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
+      );
+      
+      if (!markets || !markets.length) continue;
 
-        return (diffInDays >= min && diffInDays <= max);
-      } catch {
-        return false;
+      const current = new Date();
+      const end = new Date(markets[0].endDate);
+      const diffInDays = (end.getTime() - current.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (diffInDays >= min && diffInDays <= max) {
+        filteredActivities.push(activity);
       }
-    })
-  );
+    } catch (error) {
+      console.warn(`Error filtering activity ${activity.transactionHash} by days till event:`, error);
+    }
+  }
 
-  // Filter original activities based on computed results
-  return activities.filter((_, i) => results[i]);
+  return filteredActivities;
 };
 
 const filterByCategory = async (activities: UserActivityInterface[], list: string[]): Promise<UserActivityInterface[]> => {
@@ -142,97 +133,145 @@ const filterByCategory = async (activities: UserActivityInterface[], list: strin
     'formula-1', 'table-tennis', 'water-polo', 'track-and-field', 'auto-racing', 'horse-racing', 'premier-lacrosse-league'
   ];
 
-  let checkList = list.length === 0 ? sportsKeywords : list;
+  const checkList = list.length === 0 ? sportsKeywords : list;
+  const filteredActivities: UserActivityInterface[] = [];
 
-  // Map each activity to a Promise<boolean> to filter asynchronously
-  const results = await Promise.all(
-    activities.map(async (activity) => {
-      try {
-        const markets = await fetchData(
-          `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
-        );
-        if (!markets) return false;
-        if (!markets?.length) return false;
-        const market = markets[0];
+  for (const activity of activities) {
+    try {
+      const markets = await fetchData(
+        `https://gamma-api.polymarket.com/markets?condition_ids=${activity.conditionId}`
+      );
+      
+      if (!markets || !markets.length) continue;
+      
+      const market = markets[0];
 
-        if (market.events?.tags?.some((tag: any) =>
-          checkList.includes(tag.slug?.toLowerCase())
-        )) return true;
+      // Check tags
+      const hasMatchingTag = market.events?.tags?.some((tag: any) =>
+        checkList.includes(tag.slug?.toLowerCase())
+      );
 
-        if (market.events?.series?.some((s: any) =>
-          checkList.includes(s.slug?.toLowerCase())
-        )) return true;
+      // Check series
+      const hasMatchingSeries = market.events?.series?.some((s: any) =>
+        checkList.includes(s.slug?.toLowerCase())
+      );
 
-        const text = `${market.title || ''} ${market.description || ''}`.toLowerCase();
+      // Check text content
+      const text = `${market.title || ''} ${market.description || ''}`.toLowerCase();
+      const hasMatchingText = checkList.some(keyword => text.includes(keyword));
 
-        if (checkList.some(keyword => text.includes(keyword))) return true;
-
-        return false;
-      } catch {
-        return false;
+      if (hasMatchingTag || hasMatchingSeries || hasMatchingText) {
+        filteredActivities.push(activity);
       }
-    })
-  );
+    } catch (error) {
+      console.warn(`Error filtering activity ${activity.transactionHash} by category:`, error);
+    }
+  }
 
-  // Filter activities based on results
-  return activities.filter((_, i) => results[i]);
+  return filteredActivities;
+};
+
+const parseNumericValue = (value: string | undefined, defaultValue: number): number => {
+  const parsed = parseFloat(value || '');
+  return isNaN(parsed) ? defaultValue : parsed;
 };
 
 const filterAndSaveTrades = async (
   userActivities: UserActivityInterface[], 
-  filterData: any, 
+  filterData: TradeSettingsState, 
   tradeStyle: 'buy' | 'sell', 
-  UserActivity: any, 
-  tempTrades: UserActivityInterface[],
-  USER_ADDRESS: string
+  context: MonitorContext
 ): Promise<void> => {
   try {
     const settings = filterData[tradeStyle];
+    const { activity, tempTrades, address } = context;
     
     // Filter new trades
     let newTrades = userActivities.filter(activity => 
-      !tempTrades.some(existing => existing.transactionHash === activity.transactionHash) && activity.side.toLowerCase() === tradeStyle
+      !tempTrades.some(existing => existing.transactionHash === activity.transactionHash) && 
+      activity.side.toLowerCase() === tradeStyle
     );    
 
-    if(newTrades.length > 0){
+    if (newTrades.length === 0) return;
 
-      newTrades = newTrades.filter(activity => activity.type == "TRADE");
-      // Apply filters
-      if (settings.Filter.byOrderSize.isActive) {
-          const min = parseFloat(settings.Filter.byOrderSize.size.min) || 0;
-          const max = parseFloat(settings.Filter.byOrderSize.size.max) || Infinity;        
-          newTrades = newTrades.filter(activity => 
-              activity.size * activity.price >= min && activity.size * activity.price <= max 
-          );
-      }
-      
-      if (settings.Filter.byPrice.isActive) {
-          const min = parseFloat(settings.Filter.byPrice.size.min) || 0;
-          const max = parseFloat(settings.Filter.byPrice.size.max) || Infinity;
-          newTrades = newTrades.filter(activity => 
-              activity.price >= min && activity.price <= max 
-          );
-      }   
-      
-      if (settings.Filter.byDaysTillEvent.isActive) {
-        const min = parseInt(settings.Filter.byDaysTillEvent.size.min) || 0;
-        const max = parseInt(settings.Filter.byDaysTillEvent.size.max) || Infinity;
-        newTrades = await filterByDaysTillEvent(newTrades, min, max);
-      }
-  
-      if (settings.Filter.bySports.isActive) {
-          
-          newTrades = await filterByCategory(newTrades, settings.Filter.bySports.sportsList);
-          // console.log("bySports", newTrades.length);
-      }
-      
-      if (settings.Filter.byMinMaxAmount.isActive) {
-        const min = parseFloat(settings.Filter.byMinMaxAmount.size.min) || 0;
-        const max = parseFloat(settings.Filter.byMinMaxAmount.size.max) || Infinity;
-        newTrades = newTrades.filter(activity => 
-          activity.usdcSize >= min && activity.usdcSize <= max 
+    newTrades = newTrades.filter(activity => activity.type === "TRADE");
+    
+    if (tradeStyle === 'sell') {
+      try {
+        const myActivities: UserActivityInterface[] = await fetchData(
+          `https://data-api.polymarket.com/activity?user=${filterData.proxyAddress}&limit=500&offset=0`
         );
+        
+        if (!myActivities) {
+          console.warn('Failed to fetch my activities');
+          return;
+        }
+
+        // Only consider BUY activities for matching conditionIds
+        const myBuyConditionIds = new Set(
+          myActivities
+            .filter(activity => 
+              activity.conditionId && 
+              activity.side.toLowerCase() === 'buy' // Only match against your buy positions
+            )
+            .map(activity => activity.conditionId)
+        );
+
+        // Filter newTrades to only include sell trades for conditionIds you've bought
+        newTrades = newTrades.filter(trade => 
+          trade.conditionId && 
+          trade.side.toLowerCase() === 'sell' &&
+          myBuyConditionIds.has(trade.conditionId)
+        );
+
+        console.log(`Found ${newTrades.length} sell trades for conditions you own`);
+
+      } catch (error) {
+        console.error('Error in sell condition filtering:', error);
+        newTrades = [];
       }
+    }
+
+    // Apply filters
+    if (settings.Filter.byOrderSize.isActive) {
+      const min = parseNumericValue(settings.Filter.byOrderSize.size.min, 0);
+      const max = parseNumericValue(settings.Filter.byOrderSize.size.max, Infinity);
+      
+      newTrades = newTrades.filter(activity => {
+        const orderValue = activity.size * activity.price;
+        return orderValue >= min && orderValue <= max;
+      });
+    }
+      
+    if (settings.Filter.byPrice.isActive) {
+      const min = parseNumericValue(settings.Filter.byPrice.size.min, 0);
+      const max = parseNumericValue(settings.Filter.byPrice.size.max, Infinity);
+      
+      newTrades = newTrades.filter(activity => 
+        activity.price >= min && activity.price <= max
+      );
+    }  
+      
+    if (settings.Filter.byDaysTillEvent.isActive) {
+      const min = parseNumericValue(settings.Filter.byDaysTillEvent.size.min, 0);
+      const max = parseNumericValue(settings.Filter.byDaysTillEvent.size.max, Infinity);
+      
+      newTrades = await filterByDaysTillEvent(newTrades, min, max);
+    }
+  
+    if (settings.Filter.bySports.isActive) {
+      newTrades = await filterByCategory(newTrades, settings.Filter.bySports.sportsList || []);
+    }
+    
+    if (settings.Filter.byMinMaxAmount.isActive) {
+      const min = parseNumericValue(settings.Filter.byMinMaxAmount.size.min, 0);
+      const max = parseNumericValue(settings.Filter.byMinMaxAmount.size.max, Infinity);
+      
+      newTrades = newTrades.filter(activity => 
+        activity.usdcSize >= min && activity.usdcSize <= max
+      );
+    }
+
       // Process and save new trades
       const processedTrades = newTrades
         .map(activity => ({ 
@@ -242,60 +281,75 @@ const filterAndSaveTrades = async (
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
   
-      if (processedTrades.length > 0) {
-        await UserActivity.bulkWrite(processedTrades.map(pt => ({
-          updateOne: {
-            filter: { transactionHash: pt.transactionHash },
-            update: pt,
-            upsert: true
-          }
-        })));
-        newTrades = [...new Set(processedTrades)];
-        // await UserActivity.insertMany(newTrades);
-        await tradeExcutor(filterData, newTrades, tradeStyle, USER_ADDRESS);
-        ExecutedTrades.push(...newTrades);
-        newTrades = [];
+      // Process and save new trades
+      if (newTrades.length > 0) {
+        const processedTrades = newTrades
+          .map(activity => ({ 
+            ...activity, 
+            bot: false, 
+            botExecutedTime: 0 
+          }))
+          .sort((a, b) => a.timestamp - b.timestamp);
+
+        // await activity.bulkWrite(processedTrades.map(pt => ({
+        //   updateOne: {
+        //     filter: { transactionHash: pt.transactionHash },
+        //     update: pt,
+        //     upsert: true
+        //   }
+        // })));
+
+        // Update context with new trades
+        context.tempTrades = [...tempTrades, ...processedTrades].slice(-500);
+        await tradeExcutor({
+            filterData: filterData,
+            newTrades: processedTrades,
+            tradeStyle: tradeStyle,
+            userAddress: context.address
+        });        
       }
-    }
-  } catch (error) {
+    } catch (error) {
     console.error(`Error filtering ${tradeStyle} trades:`, error);
     throw error;
   }
 };
 
-const tradeMonitor = async (filterData: any): Promise<void> => {
+const tradeMonitor = async (proxyAddress: string): Promise<void> => {
+  
   try {
-    const slave = filterData.proxyAddress;
-    if (!slaves.includes(slave)) {
-      slaves.push(slave);
+
+    if (activeMonitors.includes(proxyAddress)) {
+      console.log(`Monitor already running for proxy address: ${proxyAddress}`);
+      return;
     }
 
     try {
-      if (intervalPtr[slave]) {
-        clearInterval(intervalPtr[slave]);
-        delete intervalPtr[slave];
+      if (intervalPtr[proxyAddress]) {
+        clearInterval(intervalPtr[proxyAddress]);
+        delete intervalPtr[proxyAddress];
       }
 
-      let settings = await Settings.findOne({proxyAddress: slave});
-      let address = "";
-      let activity: any = null;
-      let temp: UserActivityInterface[] = [];
-      
-      if(settings){
-        const initResult = await init(settings);
-        if (!initResult.temp) throw 'fetchData and init error';
-        address = initResult.address;
-        activity = initResult.activity;
-        temp = initResult.temp;
-      } 
-      
-      ExecutedTrades = temp;
-      intervalPtr[slave] = setInterval(async () => {
-        settings = await Settings.findOne({proxyAddress: slave});
-        fetchTradeData(settings, address, activity, ExecutedTrades);
+      const settings = await Settings.findOne({ proxyAddress });
+      if (!settings) {
+        throw new Error(`No settings found for proxy address: ${proxyAddress}`);
+      }
+
+      const context = await init(settings);
+      activeMonitors.push(proxyAddress);
+      intervalPtr[proxyAddress] = setInterval(async () => {
+        try {
+          const currentSettings = await Settings.findOne({ proxyAddress });
+          if (currentSettings) {
+            await fetchTradeData(currentSettings, context);
+          }
+        } catch (error) {
+          console.error('Error in monitoring interval:', error);
+        }
       }, FETCH_INTERVAL * 1000);
+
+      console.log(`Started trade monitoring for proxy address: ${proxyAddress}`);
     } catch (error) {
-      console.error('Error in monitoring loop:', error);
+      console.error('Failed to initialize trade monitor:', error);
       // Add delay before retrying to prevent rapid failures
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
@@ -306,30 +360,25 @@ const tradeMonitor = async (filterData: any): Promise<void> => {
 };
 
 
-const stopMonitor = async (proxyAddress: string) => {
+const stopMonitor = async (proxyAddress: string): Promise<void> => {
   try {
-    
-    console.log(proxyAddress)
-    console.log(slaves)
-    const index = slaves.findIndex((wallet: string) => wallet === proxyAddress);
+    const index = activeMonitors.indexOf(proxyAddress);
     if (index !== -1) {
-      slaves.splice(index, 1);
-      
-      // Clear and remove the interval
-      if (intervalPtr[proxyAddress]) {
-        clearInterval(intervalPtr[proxyAddress]);
-        delete intervalPtr[proxyAddress];
-      }
-      
-      console.log("Successfully stopped monitoring for", proxyAddress);
+      activeMonitors.splice(index, 1);
+    }
+
+    if (intervalPtr[proxyAddress]) {
+      clearInterval(intervalPtr[proxyAddress]);
+      delete intervalPtr[proxyAddress];
+      console.log(`Successfully stopped monitoring for ${proxyAddress}`);
     } else {
-      console.log("No active monitor found for", proxyAddress);
+      console.log(`No active monitor found for ${proxyAddress}`);
     }
   } catch (error) {
-    console.error('Stop initialization error:', error);
+    console.error('Error stopping monitor:', error);
+    throw error;
   }
-  
-}
+};
 
 export {
   tradeMonitor,
